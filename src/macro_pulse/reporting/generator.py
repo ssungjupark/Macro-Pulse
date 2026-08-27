@@ -56,14 +56,22 @@ def generate_telegram_summary(data, mode="Global", format_config=None):
     normalized_data = normalize_dataset(data)
     logger.info("Generating Telegram summary for mode=%s", mode)
 
-    def format_line(item):
-        if item.price is None:
-            return f"{item.name}: N/A"
+   def format_line(item):
+    if item.price is None:
+        return f"{item.name}: N/A"
 
-        price_str = _format_numeric(item.price, item.value_format)
-        if item.change_pct not in (None, 0):
-            return f"{item.name}: {price_str} ({item.change_pct:+,.2f}%)"
-        return f"{item.name}: {price_str}"
+    price_str = _format_numeric(item.price, item.value_format)
+
+    if item.value_format == ValueFormat.YIELD_3:
+        if item.change not in (None, 0):
+            change_bp = item.change * 100
+            return f"{item.name}: {price_str}% ({change_bp:+,.1f}bp)"
+        return f"{item.name}: {price_str}%"
+
+    if item.change_pct not in (None, 0):
+        return f"{item.name}: {price_str} ({item.change_pct:+,.2f}%)"
+
+    return f"{item.name}: {price_str}"
 
     def get_items(category, names):
         source_items = normalized_data.get(category, [])
