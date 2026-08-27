@@ -55,37 +55,63 @@ async def main(argv: list[str] | None = None) -> int:
     logger.info("Starting Macro Pulse Bot (mode=%s)", mode)
 
     data = fetch_all_data()
-html_report = generate_html_report(data)
-telegram_summary = generate_telegram_summary(data, mode, report_format_config)
 
-signals = detect_signals(data)
+    html_report = generate_html_report(data)
+    telegram_summary = generate_telegram_summary(
+        data,
+        mode,
+        report_format_config,
+    )
 
-if signals:
-    signal_lines = ["", "[주요 변동 신호]"]
+    # 시장에서 평소보다 큰 움직임 탐지
+    signals = detect_signals(data)
 
-    for signal in signals[:5]:
-        signal_lines.append(
-            f"{signal['name']}: {signal['move']} ({signal['direction']})"
-        )
+    if signals:
+        signal_lines = ["", "[주요 변동 신호]"]
 
-    telegram_summary += "\n".join(signal_lines)
-    logger.info("Telegram Summary (%s):\n%s\n", mode, telegram_summary)
+        for signal in signals[:5]:
+            signal_lines.append(
+                f"{signal['name']}: "
+                f"{signal['move']} "
+                f"({signal['direction']})"
+            )
+
+        telegram_summary += "\n".join(signal_lines)
+
+    logger.info(
+        "Telegram Summary (%s):\n%s\n",
+        mode,
+        telegram_summary,
+    )
 
     output_path = Path("macro_pulse_report.html")
-    output_path.write_text(html_report, encoding="utf-8")
+    output_path.write_text(
+        html_report,
+        encoding="utf-8",
+    )
+
     logger.info("Report saved to %s", output_path)
 
     if args.dry_run:
-        logger.info("Dry run complete. No notifications sent.")
+        logger.info(
+            "Dry run complete. No notifications sent."
+        )
         return 0
 
     screenshot_paths = capture_screenshots(
-        get_screenshot_targets(mode, report_format_config)
+        get_screenshot_targets(
+            mode,
+            report_format_config,
+        )
     )
 
     try:
-        telegram_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-        telegram_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+        telegram_token = os.environ.get(
+            "TELEGRAM_BOT_TOKEN"
+        )
+        telegram_chat_id = os.environ.get(
+            "TELEGRAM_CHAT_ID"
+        )
 
         if telegram_token and telegram_chat_id:
             await send_telegram_report(
@@ -94,6 +120,7 @@ if signals:
                 telegram_summary,
                 image_paths=screenshot_paths,
             )
+
     finally:
         cleanup_files(screenshot_paths)
 
