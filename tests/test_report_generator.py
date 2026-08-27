@@ -67,4 +67,4 @@ class ReportGeneratorTests(unittest.TestCase):
 
         summary = generate_telegram_summary(data, "US", config)
 
-        self.assertEqual(summary, "[채권]\nUS 10Y Treasury: 4.321 (-0.28%)")
+        self.assertEqual(summary, "[채권]\nUS 10Y Treasury: 4.321% (-1.2bp)")
