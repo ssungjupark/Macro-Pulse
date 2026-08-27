@@ -21,6 +21,7 @@ from ..reporting.generator import (
 )
 from ..reporting.screenshots import capture_screenshots
 from ..signals import detect_signals
+from ..intelligence import analyze_market
 
 
 load_dotenv()
@@ -102,6 +103,10 @@ async def main(
             )
 
         telegram_summary += "\n".join(signal_lines)
+        analysis = analyze_market(signals, mode)
+
+if analysis:
+    telegram_summary += "\n\n" + analysis
 
     logger.info(
         "Telegram Summary (%s):\n%s\n",
