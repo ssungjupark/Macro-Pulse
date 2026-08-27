@@ -10,7 +10,7 @@ from .core.logging import get_logger
 
 logger = get_logger(__name__)
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3.6-flash"
 API_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
     f"models/{MODEL}:generateContent"
