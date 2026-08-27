@@ -15,13 +15,13 @@ from ..core.artifacts import cleanup_files
 from ..core.logging import configure_logging, get_logger
 from ..data.market_data import fetch_all_data
 from ..delivery.notifier import send_telegram_report
+from ..intelligence import analyze_market
 from ..reporting.generator import (
     generate_html_report,
     generate_telegram_summary,
 )
 from ..reporting.screenshots import capture_screenshots
 from ..signals import detect_signals
-from ..intelligence import analyze_market
 
 
 load_dotenv()
@@ -103,10 +103,11 @@ async def main(
             )
 
         telegram_summary += "\n".join(signal_lines)
-        analysis = analyze_market(signals, mode)
 
-if analysis:
-    telegram_summary += "\n\n" + analysis
+    analysis = analyze_market(signals, mode)
+
+    if analysis:
+        telegram_summary += "\n\n" + analysis
 
     logger.info(
         "Telegram Summary (%s):\n%s\n",
@@ -114,9 +115,7 @@ if analysis:
         telegram_summary,
     )
 
-    output_path = Path(
-        "macro_pulse_report.html"
-    )
+    output_path = Path("macro_pulse_report.html")
 
     output_path.write_text(
         html_report,
@@ -159,8 +158,6 @@ if analysis:
             )
 
     finally:
-        cleanup_files(
-            screenshot_paths
-        )
+        cleanup_files(screenshot_paths)
 
     return 0
