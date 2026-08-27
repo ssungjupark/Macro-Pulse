@@ -13,6 +13,7 @@ from ..core.logging import configure_logging, get_logger
 from ..data.market_data import fetch_all_data
 from ..delivery.notifier import send_telegram_report
 from ..reporting.generator import generate_html_report, generate_telegram_summary
+from ..signals import detect_signals
 from ..reporting.screenshots import capture_screenshots
 
 
@@ -54,8 +55,20 @@ async def main(argv: list[str] | None = None) -> int:
     logger.info("Starting Macro Pulse Bot (mode=%s)", mode)
 
     data = fetch_all_data()
-    html_report = generate_html_report(data)
-    telegram_summary = generate_telegram_summary(data, mode, report_format_config)
+html_report = generate_html_report(data)
+telegram_summary = generate_telegram_summary(data, mode, report_format_config)
+
+signals = detect_signals(data)
+
+if signals:
+    signal_lines = ["", "[주요 변동 신호]"]
+
+    for signal in signals[:5]:
+        signal_lines.append(
+            f"{signal['name']}: {signal['move']} ({signal['direction']})"
+        )
+
+    telegram_summary += "\n".join(signal_lines)
     logger.info("Telegram Summary (%s):\n%s\n", mode, telegram_summary)
 
     output_path = Path("macro_pulse_report.html")
