@@ -56,44 +56,52 @@ def generate_telegram_summary(data, mode="Global", format_config=None):
     normalized_data = normalize_dataset(data)
     logger.info("Generating Telegram summary for mode=%s", mode)
 
-   def format_line(item):
-    if item.price is None:
-        return f"{item.name}: N/A"
+    def format_line(item):
+        if item.price is None:
+            return f"{item.name}: N/A"
 
-    price_str = _format_numeric(item.price, item.value_format)
+        price_str = _format_numeric(item.price, item.value_format)
 
-    if item.value_format == ValueFormat.YIELD_3:
-        if item.change not in (None, 0):
-            change_bp = item.change * 100
-            return f"{item.name}: {price_str}% ({change_bp:+,.1f}bp)"
-        return f"{item.name}: {price_str}%"
+        if item.value_format == ValueFormat.YIELD_3:
+            if item.change not in (None, 0):
+                change_bp = item.change * 100
+                return f"{item.name}: {price_str}% ({change_bp:+,.1f}bp)"
+            return f"{item.name}: {price_str}%"
 
-    if item.change_pct not in (None, 0):
-        return f"{item.name}: {price_str} ({item.change_pct:+,.2f}%)"
+        if item.change_pct not in (None, 0):
+            return f"{item.name}: {price_str} ({item.change_pct:+,.2f}%)"
 
-    return f"{item.name}: {price_str}"
+        return f"{item.name}: {price_str}"
 
     def get_items(category, names):
         source_items = normalized_data.get(category, [])
         found_items = []
+
         for name in names:
             for item in source_items:
                 if item.name == name:
                     found_items.append(item)
                     break
+
         return found_items
 
-    mode_format = get_mode_format(mode, format_config or load_report_format_config())
+    mode_format = get_mode_format(
+        mode,
+        format_config or load_report_format_config(),
+    )
+
     lines = []
+
     for index, section in enumerate(mode_format.summary_sections):
         lines.append(f"[{section.title}]")
+
         for item in get_items(section.category, section.items):
             lines.append(format_line(item))
+
         if index < len(mode_format.summary_sections) - 1:
             lines.append("")
 
     return "\n".join(lines)
-
 
 def _resolve_template_dir(template_dir):
     if template_dir is None:
