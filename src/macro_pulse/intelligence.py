@@ -112,39 +112,21 @@ Google Search를 사용해 가장 최근 거래일의 뉴스를 조사하고
             )
 
     except HTTPError as exc:
-    error_body = exc.read().decode(
-        "utf-8",
-        errors="replace",
-    )
+        error_body = exc.read().decode(
+            "utf-8",
+            errors="replace",
+        )
 
-    logger.warning(
-        "Gemini HTTP error %s: %s",
-        exc.code,
-        error_body,
-    )
-    return None
+        logger.warning(
+            "Gemini HTTP error %s: %s",
+            exc.code,
+            error_body,
+        )
+        return None
+
     except (URLError, TimeoutError, json.JSONDecodeError) as exc:
         logger.warning(
             "Gemini request failed: %s",
             exc,
         )
         return None
-
-    candidates = result.get("candidates", [])
-
-    if not candidates:
-        return None
-
-    parts = (
-        candidates[0]
-        .get("content", {})
-        .get("parts", [])
-    )
-
-    text = "\n".join(
-        part.get("text", "")
-        for part in parts
-        if part.get("text")
-    ).strip()
-
-    return text or None
