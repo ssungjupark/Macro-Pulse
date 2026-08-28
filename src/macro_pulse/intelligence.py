@@ -351,9 +351,11 @@ def analyze_market(
             }
         ],
         "generationConfig": {
-            "maxOutputTokens": 1600,
-        },
-    }
+    "maxOutputTokens": 4096,
+    "thinkingConfig": {
+        "thinkingLevel": "minimal",
+    },
+},
 
     request = Request(
         GEMINI_URL,
