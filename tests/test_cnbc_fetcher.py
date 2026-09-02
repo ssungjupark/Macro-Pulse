@@ -89,6 +89,15 @@ class CnbcFetcherTests(unittest.TestCase):
             ),
         )
 
+    def test_us_treasury_symbols_use_cnbc_quote_pages(self):
+        for symbol in ("US2Y", "US10Y", "US30Y"):
+            with self.subTest(symbol=symbol):
+                self.assertIn(symbol, cnbc_fetcher.CNBC_MARKET_SYMBOLS)
+                self.assertEqual(
+                    cnbc_fetcher.CNBC_QUOTES[symbol]["url"],
+                    f"https://www.cnbc.com/quotes/{symbol}",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

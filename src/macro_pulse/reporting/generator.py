@@ -62,6 +62,11 @@ def generate_telegram_summary(data, mode="Global", format_config=None):
 
         price_str = _format_numeric(item.price, item.value_format)
 
+        if item.value_format == ValueFormat.BASIS_POINTS_1:
+            if item.change not in (None, 0):
+                return f"{item.name}: {price_str}bp ({item.change:+,.1f}bp)"
+            return f"{item.name}: {price_str}bp"
+
         if item.value_format == ValueFormat.YIELD_3:
             if item.change not in (None, 0):
                 change_bp = item.change * 100
@@ -97,6 +102,11 @@ def generate_telegram_summary(data, mode="Global", format_config=None):
 
         for item in get_items(section.category, section.items):
             lines.append(format_line(item))
+
+        if section.category == "treasuries" and "US 10Y-2Y Spread" in section.items:
+            curve_text = _interpret_us_yield_curve(normalized_data)
+            if curve_text:
+                lines.append(curve_text)
 
         if index < len(mode_format.summary_sections) - 1:
             lines.append("")
@@ -141,12 +151,51 @@ def _render_item(item) -> RenderedAssetSnapshot:
 def _format_numeric(value, value_format):
     if value is None:
         return ""
-    decimals = 3 if value_format == ValueFormat.YIELD_3 else 2
+    if value_format == ValueFormat.YIELD_3:
+        decimals = 3
+    elif value_format == ValueFormat.BASIS_POINTS_1:
+        decimals = 1
+    else:
+        decimals = 2
     return f"{value:,.{decimals}f}"
 
 
 def _format_signed_numeric(value, value_format):
     if value is None:
         return ""
-    decimals = 3 if value_format == ValueFormat.YIELD_3 else 2
+    if value_format == ValueFormat.YIELD_3:
+        decimals = 3
+    elif value_format == ValueFormat.BASIS_POINTS_1:
+        decimals = 1
+    else:
+        decimals = 2
     return f"{value:+,.{decimals}f}"
+
+
+def _interpret_us_yield_curve(data):
+    spread = next(
+        (
+            item
+            for item in data.get("treasuries", [])
+            if item.name == "US 10Y-2Y Spread" and item.price is not None
+        ),
+        None,
+    )
+    if spread is None:
+        return ""
+
+    if spread.price < 0:
+        shape = "역전, 경기 둔화 및 침체 위험을 경계할 구간"
+    elif spread.price < 25:
+        shape = "평탄, 정책 전환 기대와 경기 불확실성이 맞서는 구간"
+    else:
+        shape = "정상 우상향, 장기금리가 단기금리보다 높은 구간"
+
+    movement = ""
+    if spread.change is not None:
+        if spread.change >= 5:
+            movement = ", 전일보다 가팔라짐"
+        elif spread.change <= -5:
+            movement = ", 전일보다 평탄해짐"
+
+    return f"금리 커브: {shape}{movement}"

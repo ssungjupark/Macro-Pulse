@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence
 class ValueFormat(StrEnum):
     STANDARD_2 = "standard_2"
     YIELD_3 = "yield_3"
+    BASIS_POINTS_1 = "basis_points_1"
 
 
 @dataclass(slots=True, frozen=True)
@@ -187,6 +188,8 @@ ReportDataset = dict[str, list[AssetSnapshot]]
 
 
 def infer_value_format(name: str) -> ValueFormat:
+    if "Spread" in name:
+        return ValueFormat.BASIS_POINTS_1
     if any(keyword in name for keyword in ("Bond", "Treasury", "Year")):
         return ValueFormat.YIELD_3
     return ValueFormat.STANDARD_2

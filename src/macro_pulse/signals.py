@@ -8,7 +8,8 @@ PCT_THRESHOLDS = {
     "indices_domestic": 1.0,      # 주가지수 ±1.0%
     "indices_overseas": 1.0,      # 주가지수 ±1.0%
     "volatility": 5.0,            # VIX, VKOSPI ±5.0%
-    "commodities_rates": 1.5,     # 금, 은, 구리 ±1.5%
+    "commodities": 1.5,           # 금, 은, 구리 ±1.5%
+    "treasuries": 1.0,            # 실제 판정은 아래 bp 기준 사용
     "exchange": 0.5,              # 환율 ±0.5%
     "crypto": 3.0,                # 비트코인, 이더리움 ±3.0%
 }
@@ -25,6 +26,21 @@ def detect_signals(data: ReportDataset) -> list[dict]:
 
         for item in items:
             if item.price is None:
+                continue
+
+            if item.value_format == ValueFormat.BASIS_POINTS_1:
+                if item.change is None:
+                    continue
+                if abs(item.change) >= YIELD_BP_THRESHOLD:
+                    signals.append(
+                        {
+                            "name": item.name,
+                            "category": category,
+                            "direction": "확대" if item.change > 0 else "축소",
+                            "move": f"{item.change:+.1f}bp",
+                            "score": abs(item.change) / YIELD_BP_THRESHOLD,
+                        }
+                    )
                 continue
 
             # 금리는 % 등락률이 아니라 bp 변화로 판단

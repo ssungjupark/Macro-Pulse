@@ -31,11 +31,10 @@ YF_TICKERS = {
         TickerDefinition("Hang Seng", "^HSI"),
         TickerDefinition("Shanghai Composite", "000001.SS"),
     ),
-    "commodities_rates": (
+    "commodities": (
         TickerDefinition("Gold", "GC=F"),
         TickerDefinition("Silver", "SI=F"),
         TickerDefinition("Copper", "HG=F"),
-        TickerDefinition("US 10Y Treasury", "^TNX", value_format=ValueFormat.YIELD_3),
     ),
     "crypto": (
         TickerDefinition("Bitcoin", "BTC-USD"),
@@ -64,7 +63,7 @@ def fetch_all_data() -> ReportDataset:
 
     logger.info("Fetching Yahoo Finance data...")
     _append_yahoo_snapshots(results)
-    _reorder_bond_snapshots(results["commodities_rates"])
+    _append_us_yield_spread(results["treasuries"])
 
     logger.info(
         "Completed fetch cycle with %s populated categories",
@@ -79,7 +78,8 @@ def _empty_report_dataset() -> ReportDataset:
         "indices_domestic": [],
         "indices_overseas": [],
         "volatility": [],
-        "commodities_rates": [],
+        "treasuries": [],
+        "commodities": [],
         "exchange": [],
         "crypto": [],
     }
@@ -101,8 +101,11 @@ def _fetch_rate_histories():
 def _append_cnbc_market_snapshots(results: ReportDataset, cnbc_data) -> None:
     for symbol, category, value_format in (
         (".KSVKOSPI", "volatility", ValueFormat.STANDARD_2),
-        ("JP10Y", "commodities_rates", ValueFormat.YIELD_3),
-        ("KR10Y", "commodities_rates", ValueFormat.YIELD_3),
+        ("JP10Y", "treasuries", ValueFormat.YIELD_3),
+        ("KR10Y", "treasuries", ValueFormat.YIELD_3),
+        ("US2Y", "treasuries", ValueFormat.YIELD_3),
+        ("US10Y", "treasuries", ValueFormat.YIELD_3),
+        ("US30Y", "treasuries", ValueFormat.YIELD_3),
     ):
         quote = cnbc_data.get(symbol)
         if quote is None:
@@ -158,41 +161,27 @@ def _append_yahoo_snapshots(results: ReportDataset) -> None:
                 logger.error("Error fetching YF %s: %s", definition.name, exc)
 
 
-def _reorder_bond_snapshots(commodities_rates) -> None:
-    us_10y_index = next(
-        (
-            index
-            for index, item in enumerate(commodities_rates)
-            if item.name == "US 10Y Treasury"
-        ),
-        None,
-    )
-    korea_10y_index = next(
-        (
-            index
-            for index, item in enumerate(commodities_rates)
-            if item.name == "Korea 10Y Treasury"
-        ),
-        None,
-    )
-
-    if us_10y_index is None or korea_10y_index is None:
+def _append_us_yield_spread(treasuries) -> None:
+    by_name = {item.name: item for item in treasuries}
+    two_year = by_name.get("US 2Y Treasury")
+    ten_year = by_name.get("US 10Y Treasury")
+    if not two_year or not ten_year or two_year.price is None or ten_year.price is None:
         return
 
-    us_10y_snapshot = commodities_rates.pop(us_10y_index)
-    korea_10y_index = next(
-        (
-            index
-            for index, item in enumerate(commodities_rates)
-            if item.name == "Korea 10Y Treasury"
-        ),
-        None,
-    )
-    if korea_10y_index is None:
-        commodities_rates.append(us_10y_snapshot)
-        return
+    spread_bp = (ten_year.price - two_year.price) * 100
+    spread_change_bp = None
+    if two_year.change is not None and ten_year.change is not None:
+        spread_change_bp = (ten_year.change - two_year.change) * 100
 
-    commodities_rates.insert(korea_10y_index + 1, us_10y_snapshot)
+    treasuries.append(
+        build_snapshot(
+            "US 10Y-2Y Spread",
+            spread_bp,
+            spread_change_bp,
+            None,
+            value_format=ValueFormat.BASIS_POINTS_1,
+        )
+    )
 
 
 def _configure_runtime_cache() -> None:

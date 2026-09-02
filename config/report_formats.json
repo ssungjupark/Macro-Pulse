@@ -3,7 +3,7 @@
     "KR": {
       "description": "Korean market close summary focused on domestic indices, Asia peers, local bond context, and FX.",
       "workflow_schedule": {
-        "cron": "30 07 * * 1-5",
+        "cron": "00 08 * * 1-5",
         "local_time": "17:00 KST",
         "utc_time": "08:00 UTC",
         "weekdays": "Mon-Fri"
@@ -26,7 +26,7 @@
         },
         {
           "title": "채권",
-          "category": "commodities_rates",
+          "category": "treasuries",
           "items": ["Japan 10Y Treasury", "Korea 10Y Treasury"]
         },
         {
@@ -57,9 +57,14 @@
           "items": ["VKOSPI", "VIX"]
         },
         {
-          "title": "채권, 원자재",
-          "category": "commodities_rates",
-          "items": ["US 10Y Treasury", "Gold", "Silver", "Copper"]
+          "title": "미국 국채",
+          "category": "treasuries",
+          "items": ["US 2Y Treasury", "US 10Y Treasury", "US 30Y Treasury", "US 10Y-2Y Spread"]
+        },
+        {
+          "title": "원자재",
+          "category": "commodities",
+          "items": ["Gold", "Silver", "Copper"]
         },
         {
           "title": "환율",

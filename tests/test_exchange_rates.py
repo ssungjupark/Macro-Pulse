@@ -182,7 +182,7 @@ class ExchangeRateCalculationTests(unittest.TestCase):
         results = market_data.fetch_all_data()
 
         volatility = {item.name: item for item in results["volatility"]}
-        bonds = {item.name: item for item in results["commodities_rates"]}
+        bonds = {item.name: item for item in results["treasuries"]}
 
         self.assertAlmostEqual(volatility["VKOSPI"].price, 66.61)
         self.assertAlmostEqual(volatility["VKOSPI"].change, -5.21)

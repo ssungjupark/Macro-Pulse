@@ -25,6 +25,18 @@ CNBC_MARKET_QUOTES = {
         "name": "Korea 10Y Treasury",
         "url": "https://www.cnbc.com/quotes/KR10Y",
     },
+    "US2Y": {
+        "name": "US 2Y Treasury",
+        "url": "https://www.cnbc.com/quotes/US2Y",
+    },
+    "US10Y": {
+        "name": "US 10Y Treasury",
+        "url": "https://www.cnbc.com/quotes/US10Y",
+    },
+    "US30Y": {
+        "name": "US 30Y Treasury",
+        "url": "https://www.cnbc.com/quotes/US30Y",
+    },
 }
 
 CNBC_FX_QUOTES = {
@@ -236,7 +248,7 @@ def fetch_cnbc_data(symbols):
             results[symbol] = fetch_cnbc_quote(symbol)
         except (HTTPError, URLError, TimeoutError, ValueError) as exc:
             logger.error("Failed to fetch CNBC quote for %s: %s", symbol, exc)
-        except Exception as exc:
+        except Exception:
             logger.exception("Unexpected CNBC fetch error for %s", symbol)
 
     return results
