@@ -68,6 +68,11 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
                     return_value="summary",
                 ) as telegram_summary,
                 patch(
+                    "macro_pulse.app.cli.analyze_market",
+                    return_value="[시장 해석]\n없음\n\n[체크 포인트]\n없음",
+                ),
+                patch("macro_pulse.app.cli.get_upcoming_events", return_value=[]),
+                patch(
                     "macro_pulse.app.cli.send_telegram_report",
                     new_callable=AsyncMock,
                 ) as telegram,

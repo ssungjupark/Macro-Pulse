@@ -9,6 +9,9 @@ class ValueFormat(StrEnum):
     STANDARD_2 = "standard_2"
     YIELD_3 = "yield_3"
     BASIS_POINTS_1 = "basis_points_1"
+    INTEGER = "integer"
+    KRW_100M = "krw_100m"
+    PERCENT_2 = "percent_2"
 
 
 @dataclass(slots=True, frozen=True)
@@ -76,6 +79,14 @@ class AssetSnapshot:
     ticker: str | None = None
     dates: list[str] = field(default_factory=list)
     value_format: ValueFormat = ValueFormat.STANDARD_2
+    change_5d: float | None = None
+    change_20d: float | None = None
+    z_score_20d: float | None = None
+    as_of: str | None = None
+    fetched_at: str | None = None
+    source: str | None = None
+    is_stale: bool = False
+    warning: str | None = None
 
     @classmethod
     def from_mapping(cls, raw_item: Mapping[str, Any]) -> "AssetSnapshot":
@@ -97,6 +108,14 @@ class AssetSnapshot:
             ticker=raw_item.get("ticker"),
             dates=[str(value) for value in raw_item.get("dates", [])],
             value_format=normalized_format,
+            change_5d=_coerce_optional_float(raw_item.get("change_5d")),
+            change_20d=_coerce_optional_float(raw_item.get("change_20d")),
+            z_score_20d=_coerce_optional_float(raw_item.get("z_score_20d")),
+            as_of=_coerce_optional_str(raw_item.get("as_of")),
+            fetched_at=_coerce_optional_str(raw_item.get("fetched_at")),
+            source=_coerce_optional_str(raw_item.get("source")),
+            is_stale=bool(raw_item.get("is_stale", False)),
+            warning=_coerce_optional_str(raw_item.get("warning")),
         )
 
 
@@ -248,3 +267,9 @@ def _coerce_optional_float(value: Any) -> float | None:
 
 def _coerce_float_list(values: Sequence[Any]) -> list[float]:
     return [float(value) for value in values]
+
+
+def _coerce_optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)

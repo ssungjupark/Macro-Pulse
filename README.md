@@ -14,27 +14,48 @@ Macro Pulse Bot은 시장 매크로 지표와 지수 히트맵을 종합한 보�
 - 한국장(`KR`) 또는 미국장(`US`) 기준으로 리포트를 만듭니다.
 - 주가지수, 환율, 금리, 원자재, 비트코인 같은 지표를 모읍니다.
 - 텔레그램용 짧은 요약과 HTML 리포트를 함께 만듭니다.
+- 주요 자산의 전일·5일·20일 변화와 20일 변동성 이상 신호를 계산합니다.
+- 허용 출처와 교차검증을 통과한 뉴스만 시장 해석에 사용합니다.
+- 공식 일정과 KRX 시장 데이터를 별도 계층에서 수집하며 실패한 값은 `N/A`로 표시합니다.
 - 시장 분위기를 보기 위한 스크린샷도 붙일 수 있습니다.
   - `KR`: KOSPI / KOSDAQ 히트맵
   - `US`: Finviz 맵
 
 ## 동작 방식
 
-1. Yahoo Finance와 CNBC quote page에서 데이터를 가져옵니다.
-2. 가져온 데이터를 정리합니다.
-3. HTML 리포트와 텔레그램 요약 문구를 만듭니다.
-4. 필요하면 텔레그램으로 전송합니다.
+1. Yahoo Finance, CNBC, FRED, KRX에서 무료 시장 데이터를 가져옵니다.
+2. 이상 범위, 기준 거래일, 오래된 데이터와 누락값을 검사합니다.
+3. Google News RSS에서 허용 출처만 남기고 공식 자료 1곳 또는 언론 2곳으로 검증합니다.
+4. BLS 공식 iCal과 검증 URL이 있는 일정에서 다음 주요 일정을 선택합니다.
+5. HTML 리포트와 텔레그램 요약을 만들고 필요하면 전송합니다.
 
 실제 실행 파일은 [`src/main.py`](src/main.py)입니다.
 
 ## 수집 항목
 
 - 국내 지수: `KOSPI`, `KOSDAQ`
-- 해외 지수: `S&P 500`, `Nasdaq`, `Nikkei 225` 등
-- 금리/원자재: `US 10Y Treasury`, `Gold`, `Silver`, `Copper`
+- 해외 지수: `S&P 500`, `Nasdaq`, `SOX`, `Russell 2000`, `Nikkei 225` 등
+- 미국 국채: CNBC `2Y`, `10Y`, `30Y`, `10Y-2Y Spread`, FRED 기간별 변화
+- 원자재: `WTI`, `Gold`, `Silver`, `Copper`
+- 달러: `DXY`
 - 환율: `USD/KRW`, `JPY/KRW`, `EUR/KRW`, `CNY/KRW`
 - 가상자산: `Bitcoin`, `Ethereum`
-- 변동성: `VIX`, `VKOSPI`
+- 변동성: `VIX`, `VKOSPI`, `MOVE`
+- 국내 수급/시장 체력: KRX 외국인·기관 현물, 프로그램 차익·비차익,
+  상승·하락 종목 수, 거래대금, 업종 수익률 상·하위 3개
+
+KRX에서 안정적인 공식 응답 형식을 확인하지 못한 KOSPI200 선물 수급과 52주
+신고가·신저가는 기사 숫자로 대체하지 않습니다. 해당 항목은 `N/A` 또는 누락
+처리하고 이유를 로그에 남깁니다.
+
+## 뉴스 검증 원칙
+
+- 글로벌 뉴스: Reuters, Bloomberg, Financial Times, WSJ, CNBC, AP
+- 공식 자료: Fed, 미 재무부, BLS, BEA, EIA, ECB, BOJ, 한국은행, KRX, SEC
+- 국내 보조 출처: KR 모드의 연합뉴스
+- 기업 자료: 기업 Investor Relations
+- 공식 자료는 1곳, 일반 언론은 서로 다른 허용 출처 2곳이 확인해야 분석에 사용합니다.
+- 네이트, 블로그, 커뮤니티, 증권방송과 출처 불명 자료는 제외합니다.
 
 ## GitHub Actions
 
@@ -44,12 +65,15 @@ Macro Pulse Bot은 시장 매크로 지표와 지수 히트맵을 종합한 보�
 - 최신 리포트를 GitHub Pages에 올릴 수 있습니다.
 - 실행 로그와 결과 파일을 artifact로 저장합니다.
 - 실패하면 Telegram으로 알림을 보내도록 설정할 수 있습니다.
+- 한국장 리포트는 평일 16:30 KST, 미국장 리포트는 화~토 06:30 KST에 실행합니다.
+- `Run workflow`에서는 `AUTO`, `KR`, `US` 중 실행 모드를 직접 선택할 수 있습니다.
 
 TELEGRAM Token등 KEY 설정은 [`docs/SECRETS.md`](docs/SECRETS.md)에서 볼 수 있습니다.
 
 ## 포맷 설정
 
 텔레그램 요약 순서, 스크린샷 종류, KR/US 스케줄은 [`config/report_formats.json`](config/report_formats.json)에서 바꿀 수 있습니다.
+검증된 정책·지표·기업 일정은 [`config/official_events.json`](config/official_events.json)에 공식 URL과 함께 관리합니다. 연도가 바뀌면 각 기관의 발표 일정을 확인해 이 파일을 갱신해야 합니다.
 
 - 어떤 섹션을 먼저 보여줄지
 - 어떤 항목을 포함할지

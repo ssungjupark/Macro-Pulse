@@ -6,7 +6,7 @@ import unittest
 sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
 
 from macro_pulse.domain.models import AssetSnapshot, ValueFormat
-from macro_pulse.signals import detect_signals
+from macro_pulse.signals import detect_signals, select_representative_signals
 
 
 class SignalTests(unittest.TestCase):
@@ -40,6 +40,25 @@ class SignalTests(unittest.TestCase):
         }
 
         self.assertEqual(detect_signals(data), [])
+
+    def test_representative_signals_limit_correlated_groups(self):
+        signals = [
+            {"name": "Nasdaq", "score": 5.0},
+            {"name": "SOX", "score": 4.0},
+            {"name": "S&P 500", "score": 3.0},
+            {"name": "EUR/KRW", "score": 2.0},
+            {"name": "CNY/KRW", "score": 1.9},
+            {"name": "WTI", "score": 1.8},
+        ]
+
+        selected = select_representative_signals(signals)
+        names = [item["name"] for item in selected]
+
+        self.assertEqual(names[:2], ["Nasdaq", "SOX"])
+        self.assertNotIn("S&P 500", names)
+        self.assertIn("EUR/KRW", names)
+        self.assertNotIn("CNY/KRW", names)
+        self.assertIn("WTI", names)
 
 
 if __name__ == "__main__":

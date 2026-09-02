@@ -31,6 +31,14 @@ def print_exchange_snapshot(exchange):
 
 
 class ExchangeRateCalculationTests(unittest.TestCase):
+    @patch(
+        "macro_pulse.data.market_data.fetch_treasury_histories",
+        return_value={},
+    )
+    @patch(
+        "macro_pulse.data.market_data.fetch_krx_market_state",
+        return_value={"domestic_flow": [], "market_breadth": []},
+    )
     @patch.dict(market_data.YF_TICKERS, {}, clear=True)
     @patch.dict(
         market_data.YF_RATES_HISTORY,
@@ -75,6 +83,8 @@ class ExchangeRateCalculationTests(unittest.TestCase):
         self,
         mock_ticker,
         _mock_cnbc,
+        _mock_krx,
+        _mock_fred,
     ):
         history_by_ticker = {
             "KRW=X": make_history(
@@ -107,7 +117,7 @@ class ExchangeRateCalculationTests(unittest.TestCase):
         assert_float_list_almost_equal(
             self,
             usd_krw.history,
-            [1310.0, 1315.0, 1320.0, 1322.0, 1324.0, 1328.0, 1329.0],
+            [1310.0, 1315.0, 1320.0, 1322.0, 1324.0, 1328.0, 1329.0, 1330.0],
         )
 
         expected_jpy_krw = (1330.0 / 150.0) * 100
@@ -121,7 +131,16 @@ class ExchangeRateCalculationTests(unittest.TestCase):
         assert_float_list_almost_equal(
             self,
             jpy_krw.history,
-            [900.0, 905.0, 910.0, 915.0, 920.0, 925.0, 930.0],
+            [
+                900.0,
+                905.0,
+                910.0,
+                915.0,
+                920.0,
+                925.0,
+                930.0,
+                expected_jpy_krw,
+            ],
         )
 
         expected_eur_krw = 1330.0 * 1.08
@@ -135,7 +154,16 @@ class ExchangeRateCalculationTests(unittest.TestCase):
         assert_float_list_almost_equal(
             self,
             eur_krw.history,
-            [1420.0, 1425.0, 1428.0, 1430.0, 1432.0, 1434.0, 1435.0],
+            [
+                1420.0,
+                1425.0,
+                1428.0,
+                1430.0,
+                1432.0,
+                1434.0,
+                1435.0,
+                expected_eur_krw,
+            ],
         )
 
         expected_cny_krw = 1330.0 / 7.2
@@ -150,6 +178,14 @@ class ExchangeRateCalculationTests(unittest.TestCase):
 
         print_exchange_snapshot(exchange)
 
+    @patch(
+        "macro_pulse.data.market_data.fetch_treasury_histories",
+        return_value={},
+    )
+    @patch(
+        "macro_pulse.data.market_data.fetch_krx_market_state",
+        return_value={"domestic_flow": [], "market_breadth": []},
+    )
     @patch.dict(market_data.YF_TICKERS, {}, clear=True)
     @patch.dict(market_data.YF_RATES_HISTORY, {}, clear=True)
     @patch(
@@ -178,6 +214,8 @@ class ExchangeRateCalculationTests(unittest.TestCase):
     def test_fetch_all_data_keeps_cnbc_daily_change_values(
         self,
         _mock_cnbc,
+        _mock_krx,
+        _mock_fred,
     ):
         results = market_data.fetch_all_data()
 

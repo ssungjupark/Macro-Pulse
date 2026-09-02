@@ -3,12 +3,22 @@ name: Daily Macro Pulse Report
 on:
   schedule:
     # BEGIN GENERATED SCHEDULES
-    # KR | 17:00 KST | 08:00 UTC | Mon-Fri
-    - cron: '00 08 * * 1-5'
+    # KR | 16:30 KST | 07:30 UTC | Mon-Fri
+    - cron: '30 07 * * 1-5'
     # US | 06:30 KST | 21:30 UTC | Tue-Sat KST
     - cron: '30 21 * * 1-5'
     # END GENERATED SCHEDULES
   workflow_dispatch:
+    inputs:
+      market:
+        description: 'Report market mode'
+        required: false
+        default: 'AUTO'
+        type: choice
+        options:
+          - AUTO
+          - KR
+          - US
 
 permissions:
   contents: read
@@ -27,6 +37,7 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      REPORT_MARKET: ${{ github.event.inputs.market || 'AUTO' }}
       
     steps:
     - name: Checkout code
@@ -50,10 +61,11 @@ jobs:
           -e TELEGRAM_BOT_TOKEN \
           -e TELEGRAM_CHAT_ID \
           -e GEMINI_API_KEY \
+          -e REPORT_MARKET \
           -v "$PWD:/app" \
           -w /app \
           macro-pulse:daily \
-          sh -lc "uv run --frozen python src/main.py 2>&1 | tee macro-pulse.log"
+          sh -lc "uv run --frozen python src/main.py --market \"$REPORT_MARKET\" 2>&1 | tee macro-pulse.log"
       
     - name: Validate generated report
       if: success()

@@ -3,9 +3,9 @@
     "KR": {
       "description": "Korean market close summary focused on domestic indices, Asia peers, local bond context, and FX.",
       "workflow_schedule": {
-        "cron": "00 08 * * 1-5",
-        "local_time": "17:00 KST",
-        "utc_time": "08:00 UTC",
+        "cron": "30 07 * * 1-5",
+        "local_time": "16:30 KST",
+        "utc_time": "07:30 UTC",
         "weekdays": "Mon-Fri"
       },
       "summary_sections": [
@@ -31,8 +31,30 @@
         },
         {
           "title": "환율",
-          "category": "exchange",
-          "items": ["USD/KRW", "JPY/KRW"]
+          "category": "macro_context",
+          "items": ["DXY", "USD/KRW", "JPY/KRW", "WTI"]
+        },
+        {
+          "title": "수급 및 시장 체력",
+          "category": "domestic_state",
+          "items": [
+            "외국인 KOSPI 현물",
+            "기관 KOSPI 현물",
+            "외국인 KOSDAQ 현물",
+            "기관 KOSDAQ 현물",
+            "외국인 KOSPI200 선물",
+            "프로그램 차익",
+            "프로그램 비차익",
+            "KOSPI 상승 종목",
+            "KOSPI 하락 종목",
+            "KOSPI 거래대금",
+            "KOSDAQ 상승 종목",
+            "KOSDAQ 하락 종목",
+            "KOSDAQ 거래대금",
+            "업종 수익률",
+            "업종 상위*",
+            "업종 하위*"
+          ]
         }
       ],
       "screenshot_targets": ["kospi", "kosdaq"]
@@ -49,12 +71,12 @@
         {
           "title": "해외 증시",
           "category": "indices_overseas",
-          "items": ["S&P 500", "Nasdaq", "Euro Stoxx 50"]
+          "items": ["S&P 500", "Nasdaq", "Euro Stoxx 50", "SOX", "Russell 2000"]
         },
         {
           "title": "변동성",
           "category": "volatility",
-          "items": ["VKOSPI", "VIX"]
+          "items": ["VIX", "MOVE"]
         },
         {
           "title": "미국 국채",
@@ -64,12 +86,12 @@
         {
           "title": "원자재",
           "category": "commodities",
-          "items": ["Gold", "Silver", "Copper"]
+          "items": ["WTI", "Gold", "Silver", "Copper"]
         },
         {
-          "title": "환율",
-          "category": "exchange",
-          "items": ["USD/KRW", "JPY/KRW"]
+          "title": "달러 및 환율",
+          "category": "macro_context",
+          "items": ["DXY", "USD/KRW", "JPY/KRW"]
         },
         {
           "title": "암호화폐",

@@ -15,13 +15,18 @@ from ..core.artifacts import cleanup_files
 from ..core.logging import configure_logging, get_logger
 from ..data.market_data import fetch_all_data
 from ..delivery.notifier import send_telegram_report
+from ..events import get_upcoming_events, insert_event_section
 from ..intelligence import analyze_market
 from ..reporting.generator import (
     generate_html_report,
     generate_telegram_summary,
 )
 from ..reporting.screenshots import capture_screenshots
-from ..signals import detect_signals
+from ..signals import (
+    detect_signals,
+    format_signal_context,
+    select_representative_signals,
+)
 
 
 load_dotenv()
@@ -44,9 +49,7 @@ def resolve_mode(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Macro Pulse Bot"
-    )
+    parser = argparse.ArgumentParser(description="Macro Pulse Bot")
 
     parser.add_argument(
         "--dry-run",
@@ -62,6 +65,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     return parser
+
+
+def compose_telegram_report(
+    base_summary: str,
+    signals: list[dict],
+    analysis: str | None,
+    events,
+) -> str:
+    signal_lines = ["[주요 변동 신호]"]
+    if signals:
+        for signal in signals[:5]:
+            context = format_signal_context(signal)
+            context_suffix = f" | {context}" if context else ""
+            signal_lines.append(
+                f"{signal['name']}: {signal['move']} "
+                f"({signal['direction']}){context_suffix}"
+            )
+    else:
+        signal_lines.append("기준치 이상의 특이 변동 신호 없음")
+
+    normalized_analysis = analysis or (
+        "[시장 해석]\n검증된 자동 해석 없음\n\n"
+        "[핵심 이슈]\n검증 조건을 충족한 핵심 이슈 없음\n\n"
+        "[체크 포인트]\n공식 일정과 데이터 정상화 여부 확인"
+    )
+    normalized_analysis = insert_event_section(normalized_analysis, events)
+    signal_section = "\n".join(signal_lines)
+    return f"{base_summary}\n\n{signal_section}\n\n{normalized_analysis}"
 
 
 async def main(
@@ -81,33 +112,21 @@ async def main(
 
     html_report = generate_html_report(data)
 
-    telegram_summary = generate_telegram_summary(
+    base_summary = generate_telegram_summary(
         data,
         mode,
         report_format_config,
     )
 
-    signals = detect_signals(data)
+    signals = select_representative_signals(detect_signals(data))
 
-    if signals:
-        signal_lines = [
-            "",
-            "[주요 변동 신호]",
-        ]
-
-        for signal in signals[:5]:
-            signal_lines.append(
-                f"{signal['name']}: "
-                f"{signal['move']} "
-                f"({signal['direction']})"
-            )
-
-        telegram_summary += "\n".join(signal_lines)
-
-    analysis = analyze_market(signals, mode)
-
-    if analysis:
-        telegram_summary += "\n\n" + analysis
+    analysis = analyze_market(signals, mode, data)
+    telegram_summary = compose_telegram_report(
+        base_summary,
+        signals,
+        analysis,
+        get_upcoming_events(),
+    )
 
     logger.info(
         "Telegram Summary (%s):\n%s\n",
@@ -128,9 +147,7 @@ async def main(
     )
 
     if args.dry_run:
-        logger.info(
-            "Dry run complete. No notifications sent."
-        )
+        logger.info("Dry run complete. No notifications sent.")
         return 0
 
     screenshot_paths = capture_screenshots(
@@ -141,13 +158,9 @@ async def main(
     )
 
     try:
-        telegram_token = os.environ.get(
-            "TELEGRAM_BOT_TOKEN"
-        )
+        telegram_token = os.environ.get("TELEGRAM_BOT_TOKEN")
 
-        telegram_chat_id = os.environ.get(
-            "TELEGRAM_CHAT_ID"
-        )
+        telegram_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
 
         if telegram_token and telegram_chat_id:
             await send_telegram_report(

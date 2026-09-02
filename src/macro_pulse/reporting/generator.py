@@ -58,7 +58,8 @@ def generate_telegram_summary(data, mode="Global", format_config=None):
 
     def format_line(item):
         if item.price is None:
-            return f"{item.name}: N/A"
+            detail = f" ({item.warning})" if item.warning else ""
+            return f"{item.name}: N/A{detail}"
 
         price_str = _format_numeric(item.price, item.value_format)
 
@@ -73,6 +74,15 @@ def generate_telegram_summary(data, mode="Global", format_config=None):
                 return f"{item.name}: {price_str}% ({change_bp:+,.1f}bp)"
             return f"{item.name}: {price_str}%"
 
+        if item.value_format == ValueFormat.KRW_100M:
+            return f"{item.name}: {price_str}억원"
+
+        if item.value_format == ValueFormat.INTEGER:
+            return f"{item.name}: {price_str}개"
+
+        if item.value_format == ValueFormat.PERCENT_2:
+            return f"{item.name}: {item.price:+,.2f}%"
+
         if item.change_pct not in (None, 0):
             return f"{item.name}: {price_str} ({item.change_pct:+,.2f}%)"
 
@@ -83,6 +93,12 @@ def generate_telegram_summary(data, mode="Global", format_config=None):
         found_items = []
 
         for name in names:
+            if name.endswith("*"):
+                prefix = name[:-1]
+                found_items.extend(
+                    item for item in source_items if item.name.startswith(prefix)
+                )
+                continue
             for item in source_items:
                 if item.name == name:
                     found_items.append(item)
@@ -112,6 +128,7 @@ def generate_telegram_summary(data, mode="Global", format_config=None):
             lines.append("")
 
     return "\n".join(lines)
+
 
 def _resolve_template_dir(template_dir):
     if template_dir is None:
@@ -155,6 +172,12 @@ def _format_numeric(value, value_format):
         decimals = 3
     elif value_format == ValueFormat.BASIS_POINTS_1:
         decimals = 1
+    elif value_format in (
+        ValueFormat.INTEGER,
+        ValueFormat.KRW_100M,
+        ValueFormat.PERCENT_2,
+    ):
+        decimals = 0
     else:
         decimals = 2
     return f"{value:,.{decimals}f}"
@@ -167,6 +190,12 @@ def _format_signed_numeric(value, value_format):
         decimals = 3
     elif value_format == ValueFormat.BASIS_POINTS_1:
         decimals = 1
+    elif value_format in (
+        ValueFormat.INTEGER,
+        ValueFormat.KRW_100M,
+        ValueFormat.PERCENT_2,
+    ):
+        decimals = 0
     else:
         decimals = 2
     return f"{value:+,.{decimals}f}"
