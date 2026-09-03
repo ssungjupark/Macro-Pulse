@@ -37,6 +37,8 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
       REPORT_MARKET: ${{ github.event.inputs.market || 'AUTO' }}
       
     steps:
@@ -61,6 +63,8 @@ jobs:
           -e TELEGRAM_BOT_TOKEN \
           -e TELEGRAM_CHAT_ID \
           -e GEMINI_API_KEY \
+          -e KIS_APP_KEY \
+          -e KIS_APP_SECRET \
           -e REPORT_MARKET \
           -v "$PWD:/app" \
           -w /app \

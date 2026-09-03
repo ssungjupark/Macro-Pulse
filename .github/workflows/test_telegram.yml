@@ -19,6 +19,9 @@ jobs:
       REPORT_FORMAT_CONFIG: config/report_formats.json
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
+      KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
 
     steps:
     - name: Checkout code
@@ -41,6 +44,9 @@ jobs:
           -e REPORT_FORMAT_CONFIG \
           -e TELEGRAM_BOT_TOKEN \
           -e TELEGRAM_CHAT_ID \
+          -e GEMINI_API_KEY \
+          -e KIS_APP_KEY \
+          -e KIS_APP_SECRET \
           -v "$PWD:/app" \
           -w /app \
           macro-pulse:test \

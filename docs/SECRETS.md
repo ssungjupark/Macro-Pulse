@@ -16,6 +16,14 @@ GitHub Actions에서 Macro Pulse Bot을 정상적으로 실행하려면 저장�
 - `TELEGRAM_BOT_TOKEN`: BotFather로 만든 텔레그램 봇의 토큰
 - `TELEGRAM_CHAT_ID`: 리포트를 받을 채팅방 또는 채널의 ID
 
+### 한국투자 Open API
+
+- `KIS_APP_KEY`: 한국투자 Open API 앱 키
+- `KIS_APP_SECRET`: 한국투자 Open API 앱 시크릿
+
+국내 수급과 시장 체력 조회에 사용합니다. 계좌번호, 계좌 비밀번호와 주문 권한은
+등록하지 않습니다.
+
 ## 주의 사항
 
 - Secret 이름은 위와 정확히 같아야 합니다.

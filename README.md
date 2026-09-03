@@ -16,14 +16,14 @@ Macro Pulse Bot은 시장 매크로 지표와 지수 히트맵을 종합한 보�
 - 텔레그램용 짧은 요약과 HTML 리포트를 함께 만듭니다.
 - 주요 자산의 전일·5일·20일 변화와 20일 변동성 이상 신호를 계산합니다.
 - 허용 출처와 교차검증을 통과한 뉴스만 시장 해석에 사용합니다.
-- 공식 일정과 KRX 시장 데이터를 별도 계층에서 수집하며 실패한 값은 `N/A`로 표시합니다.
+- 공식 일정과 한국투자증권 시세 데이터를 별도 계층에서 수집하며, 전체 수집 실패 시 해당 섹션에 `N/A` 한 줄만 표시합니다.
 - 시장 분위기를 보기 위한 스크린샷도 붙일 수 있습니다.
   - `KR`: KOSPI / KOSDAQ 히트맵
   - `US`: Finviz 맵
 
 ## 동작 방식
 
-1. Yahoo Finance, CNBC, FRED, KRX에서 무료 시장 데이터를 가져옵니다.
+1. Yahoo Finance, CNBC, FRED, 한국투자 Open API에서 무료 시장 데이터를 가져옵니다.
 2. 이상 범위, 기준 거래일, 오래된 데이터와 누락값을 검사합니다.
 3. Google News RSS에서 허용 출처만 남기고 공식 자료 1곳 또는 언론 2곳으로 검증합니다.
 4. BLS 공식 iCal과 검증 URL이 있는 일정에서 다음 주요 일정을 선택합니다.
@@ -41,12 +41,12 @@ Macro Pulse Bot은 시장 매크로 지표와 지수 히트맵을 종합한 보�
 - 환율: `USD/KRW`, `JPY/KRW`, `EUR/KRW`, `CNY/KRW`
 - 가상자산: `Bitcoin`, `Ethereum`
 - 변동성: `VIX`, `VKOSPI`, `MOVE`
-- 국내 수급/시장 체력: KRX 외국인·기관 현물, 프로그램 차익·비차익,
+- 국내 수급/시장 체력: 한국투자 Open API 외국인 및 기관 현물, KOSPI 프로그램 차익 및 비차익,
   상승·하락 종목 수, 거래대금, 업종 수익률 상·하위 3개
 
-KRX에서 안정적인 공식 응답 형식을 확인하지 못한 KOSPI200 선물 수급과 52주
-신고가·신저가는 기사 숫자로 대체하지 않습니다. 해당 항목은 `N/A` 또는 누락
-처리하고 이유를 로그에 남깁니다.
+시세 전용 공식 응답을 확인하지 못한 KOSPI200 선물 수급과 52주 신고가 및
+신저가는 기사 숫자로 대체하지 않습니다. 해당 항목은 보고서에서 제외하고 이유를
+로그에 남깁니다. 국내 수급 조회에는 계좌번호와 주문 권한을 사용하지 않습니다.
 
 ## 뉴스 검증 원칙
 
@@ -85,7 +85,7 @@ TELEGRAM Token등 KEY 설정은 [`docs/SECRETS.md`](docs/SECRETS.md)에서 볼 �
 Fork해서 바로 쓰려면 아래만 먼저 설정하면 됩니다.
 
 1. Fork한 저장소의 `Actions` 탭에서 워크플로를 활성화합니다.
-2. `Settings > Secrets and variables > Actions`에서 Telegram Secret을 등록합니다.
+2. `Settings > Secrets and variables > Actions`에서 Telegram 및 한국투자 Open API Secret을 등록합니다.
 3. 웹 리포트도 보고 싶다면 `Settings > Pages`에서 source를 `GitHub Actions`로 설정합니다.
 4. 필요하면 [`config/report_formats.json`](config/report_formats.json)에서 KR/US 포맷과 스케줄을 바꿉니다.
 

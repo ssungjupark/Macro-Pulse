@@ -54,7 +54,9 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "macro_pulse_report.html"
             with (
-                patch("macro_pulse.app.cli.fetch_all_data", return_value=data),
+                patch(
+                    "macro_pulse.app.cli.fetch_all_data", return_value=data
+                ) as fetch_data,
                 patch(
                     "macro_pulse.app.cli.load_report_format_config",
                     return_value=config,
@@ -85,6 +87,7 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
                     os.chdir(previous_cwd)
 
             self.assertEqual(exit_code, 0)
+            fetch_data.assert_called_once_with("US")
             self.assertTrue(output_path.exists())
             self.assertEqual(
                 output_path.read_text(encoding="utf-8"), "<html>report</html>"

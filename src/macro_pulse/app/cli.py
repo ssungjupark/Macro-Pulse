@@ -108,7 +108,7 @@ async def main(
         mode,
     )
 
-    data = fetch_all_data()
+    data = fetch_all_data(mode)
 
     html_report = generate_html_report(data)
 

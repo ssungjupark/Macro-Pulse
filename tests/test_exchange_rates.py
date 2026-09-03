@@ -36,7 +36,7 @@ class ExchangeRateCalculationTests(unittest.TestCase):
         return_value={},
     )
     @patch(
-        "macro_pulse.data.market_data.fetch_krx_market_state",
+        "macro_pulse.data.market_data.fetch_kis_market_state",
         return_value={"domestic_flow": [], "market_breadth": []},
     )
     @patch.dict(market_data.YF_TICKERS, {}, clear=True)
@@ -83,7 +83,7 @@ class ExchangeRateCalculationTests(unittest.TestCase):
         self,
         mock_ticker,
         _mock_cnbc,
-        _mock_krx,
+        _mock_kis,
         _mock_fred,
     ):
         history_by_ticker = {
@@ -183,7 +183,7 @@ class ExchangeRateCalculationTests(unittest.TestCase):
         return_value={},
     )
     @patch(
-        "macro_pulse.data.market_data.fetch_krx_market_state",
+        "macro_pulse.data.market_data.fetch_kis_market_state",
         return_value={"domestic_flow": [], "market_breadth": []},
     )
     @patch.dict(market_data.YF_TICKERS, {}, clear=True)
@@ -214,7 +214,7 @@ class ExchangeRateCalculationTests(unittest.TestCase):
     def test_fetch_all_data_keeps_cnbc_daily_change_values(
         self,
         _mock_cnbc,
-        _mock_krx,
+        _mock_kis,
         _mock_fred,
     ):
         results = market_data.fetch_all_data()

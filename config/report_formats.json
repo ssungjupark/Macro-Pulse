@@ -38,11 +38,11 @@
           "title": "수급 및 시장 체력",
           "category": "domestic_state",
           "items": [
+            "국내 수급 및 시장 체력",
             "외국인 KOSPI 현물",
             "기관 KOSPI 현물",
             "외국인 KOSDAQ 현물",
             "기관 KOSDAQ 현물",
-            "외국인 KOSPI200 선물",
             "프로그램 차익",
             "프로그램 비차익",
             "KOSPI 상승 종목",
