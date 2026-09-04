@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import xml.etree.ElementTree as ET
 from difflib import SequenceMatcher
 from email.utils import parsedate_to_datetime
@@ -56,6 +57,68 @@ OFFICIAL_SOURCES = (
 )
 
 KR_SUPPLEMENTAL_SOURCES = ("연합뉴스", "Yonhap News Agency")
+
+SOURCE_ALIASES = {
+    "Reuters": ("Reuters", "Reuters.com", "로이터"),
+    "Bloomberg": ("Bloomberg", "Bloomberg.com", "블룸버그"),
+    "Financial Times": (
+        "Financial Times",
+        "FT",
+        "FT.com",
+        "파이낸셜타임스",
+    ),
+    "The Wall Street Journal": (
+        "The Wall Street Journal",
+        "Wall Street Journal",
+        "WSJ",
+        "WSJ.com",
+    ),
+    "CNBC": ("CNBC", "CNBC.com"),
+    "Associated Press": (
+        "Associated Press",
+        "The Associated Press",
+        "AP",
+        "AP News",
+        "APNews.com",
+    ),
+    "Yonhap News Agency": ("Yonhap News Agency", "연합뉴스"),
+}
+
+TOPIC_ALIASES = {
+    "oil": ("oil", "crude", "wti", "유가", "원유"),
+    "middle_east": (
+        "middle east",
+        "iran",
+        "israel",
+        "중동",
+        "이란",
+        "이스라엘",
+    ),
+    "inflation": ("inflation", "price pressure", "물가", "인플레이션"),
+    "rates": (
+        "treasury yield",
+        "bond yield",
+        "interest rate",
+        "국채금리",
+        "국채 금리",
+        "금리",
+    ),
+    "fed": ("federal reserve", "fed", "fomc", "연준"),
+    "boj": ("bank of japan", "boj", "일본은행"),
+    "korea": ("korea", "kospi", "한국", "코스피"),
+    "japan": ("japan", "nikkei", "일본", "닛케이"),
+    "semiconductor": (
+        "semiconductor",
+        "chip",
+        "nvidia",
+        "broadcom",
+        "반도체",
+        "엔비디아",
+        "브로드컴",
+    ),
+    "earnings": ("earnings", "results", "실적"),
+    "currency": ("dollar", "yen", "won", "달러", "엔화", "원화", "환율"),
+}
 
 BLOCKED_SOURCE_TOKENS = (
     "네이트",
@@ -251,6 +314,18 @@ def _broad_specs(
     if mode == "KR":
         return [
             (
+                "global markets oil Treasury yields Asia stocks when:1d",
+                "en-US",
+                "US",
+                "US:en",
+            ),
+            (
+                "Middle East oil inflation stocks Reuters Bloomberg when:1d",
+                "en-US",
+                "US",
+                "US:en",
+            ),
+            (
                 "코스피 증시 반도체 외국인 삼성전자 SK하이닉스 when:1d",
                 "ko",
                 "KR",
@@ -399,13 +474,14 @@ def is_allowed_source(source: str, mode: str = "US") -> bool:
     allowed = [*TRUSTED_MEDIA, *OFFICIAL_SOURCES]
     if mode == "KR":
         allowed.extend(KR_SUPPLEMENTAL_SOURCES)
-    return normalized in {_normalize_source(name) for name in allowed}
+    allowed_canonical = {_canonical_source(name) for name in allowed}
+    return _canonical_source(source) in allowed_canonical
 
 
 def is_official_source(source: str) -> bool:
     normalized = _normalize_source(source)
-    return _is_company_ir(normalized) or normalized in {
-        _normalize_source(name) for name in OFFICIAL_SOURCES
+    return _is_company_ir(normalized) or _canonical_source(source) in {
+        _canonical_source(name) for name in OFFICIAL_SOURCES
     }
 
 
@@ -418,8 +494,8 @@ def verify_and_deduplicate_articles(
         if not is_allowed_source(article.get("source", ""), mode):
             continue
         if any(
-            _normalize_source(article.get("source", ""))
-            == _normalize_source(item.get("source", ""))
+            _canonical_source(article.get("source", ""))
+            == _canonical_source(item.get("source", ""))
             and _same_story(article["title"], item["title"])
             for item in unique
         ):
@@ -444,7 +520,7 @@ def verify_and_deduplicate_articles(
     verified = []
     for group in groups:
         sources = {
-            _normalize_source(article["source"]): article["source"].strip()
+            _canonical_source(article["source"]): article["source"].strip()
             for article in group
         }
         official = any(is_official_source(source) for source in sources.values())
@@ -465,6 +541,14 @@ def verify_and_deduplicate_articles(
 
 def _normalize_source(source: str) -> str:
     return re.sub(r"\s+", " ", source.strip()).casefold().rstrip(".")
+
+
+def _canonical_source(source: str) -> str:
+    normalized = _normalize_source(source)
+    for canonical, aliases in SOURCE_ALIASES.items():
+        if normalized in {_normalize_source(alias) for alias in aliases}:
+            return _normalize_source(canonical)
+    return normalized
 
 
 def _is_company_ir(normalized_source: str) -> bool:
@@ -489,11 +573,23 @@ def _same_story(left: str, right: str) -> bool:
 def _same_topic(left: str, right: str) -> bool:
     left_tokens = _title_tokens(left)
     right_tokens = _title_tokens(right)
-    if not left_tokens or not right_tokens:
-        return False
-    overlap = len(left_tokens & right_tokens)
-    union = len(left_tokens | right_tokens)
-    return overlap >= 2 and overlap / union >= 0.2
+    if left_tokens and right_tokens:
+        overlap = len(left_tokens & right_tokens)
+        union = len(left_tokens | right_tokens)
+        if overlap >= 2 and overlap / union >= 0.2:
+            return True
+
+    shared_topics = _topic_tags(left) & _topic_tags(right)
+    return len(shared_topics) >= 2
+
+
+def _topic_tags(title: str) -> set[str]:
+    normalized = _normalize_title(title)
+    return {
+        topic
+        for topic, aliases in TOPIC_ALIASES.items()
+        if any(_normalize_title(alias) in normalized for alias in aliases)
+    }
 
 
 def _normalize_title(title: str) -> str:
@@ -530,23 +626,10 @@ def _news_text(
 def _fallback(
     signals: list[dict],
     news: list[dict],
+    mode: str = "US",
+    data=None,
 ) -> str:
-    lines = ["[시장 해석]"]
-
-    if signals:
-        signal_summary = ", ".join(
-            f"{signal['name']} {signal['move']}" for signal in signals[:4]
-        )
-
-        lines.append(
-            f"주요 변동 신호는 "
-            f"{signal_summary}입니다. "
-            "AI 분석 호출이 실패해 "
-            "자동 해석을 생략합니다."
-        )
-
-    else:
-        lines.append("특이 변동 신호는 없으며 AI 분석 호출이 실패했습니다.")
+    lines = ["[시장 해석]", *_rule_based_interpretation(signals, mode, data)]
 
     lines.extend(["", "[핵심 이슈]"])
     if news:
@@ -554,18 +637,121 @@ def _fallback(
             verified_by = article.get("verified_by") or [article["source"]]
             lines.append(f"{index}. {article['title']} ({', '.join(verified_by)})")
     else:
-        lines.append("검증 조건을 충족한 핵심 이슈 없음")
+        observed = _observed_issue_lines(signals, mode, data)
+        lines.extend(observed or ["검증된 뉴스 원인을 확보하지 못했습니다."])
 
-    lines.extend(
-        [
-            "",
-            "[체크 포인트]",
-            "- 주요 가격 신호의 후속 움직임과 공식 일정 확인",
-            "- 누락 또는 지연된 데이터의 정상화 여부 확인",
-        ]
-    )
+    lines.extend(["", "[체크 포인트]"])
+    lines.extend(_rule_based_checkpoints(signals, mode, news))
 
     return "\n".join(lines)
+
+
+def _rule_based_interpretation(signals: list[dict], mode: str, data) -> list[str]:
+    if signals:
+        equity_names = (
+            {"KOSPI", "KOSDAQ", "Nikkei 225", "Hang Seng", "Shanghai Composite"}
+            if mode == "KR"
+            else {"S&P 500", "Nasdaq", "SOX", "Russell 2000", "Euro Stoxx 50"}
+        )
+        equity = [signal for signal in signals if signal["name"] in equity_names]
+        macro = [signal for signal in signals if signal not in equity]
+        lines = []
+        if equity:
+            lines.append(
+                "주식시장은 "
+                + ", ".join(
+                    f"{signal['name']} {signal['move']}" for signal in equity[:4]
+                )
+                + "의 변동 신호가 나타났습니다."
+            )
+        if macro:
+            lines.append(
+                "금리, 달러 및 원자재 관련 신호는 "
+                + ", ".join(
+                    f"{signal['name']} {signal['move']}" for signal in macro[:3]
+                )
+                + "로 집계됐습니다."
+            )
+    else:
+        lines = ["기준치 이상의 특이 가격 변동은 확인되지 않았습니다."]
+
+    if mode == "KR":
+        flow = _domestic_flow_sentence(data)
+        if flow:
+            lines.append(flow)
+
+    if len(lines) == 1:
+        lines.append("직접 수집한 가격 기준으로 다음 거래의 연속성을 확인해야 합니다.")
+    return lines[:3]
+
+
+def _domestic_flow_sentence(data) -> str:
+    values = []
+    for name in (
+        "외국인 KOSPI 현물",
+        "기관 KOSPI 현물",
+        "외국인 KOSDAQ 현물",
+        "기관 KOSDAQ 현물",
+    ):
+        value = _snapshot_price(data, name)
+        if value is not None:
+            values.append(f"{name} {value:+,.0f}억원")
+    if not values:
+        return ""
+    return "국내 현물 수급은 " + ", ".join(values) + "으로 집계됐습니다."
+
+
+def _snapshot_price(data, name: str) -> float | None:
+    if not data:
+        return None
+    for items in data.values():
+        for item in items:
+            item_name = getattr(item, "name", None)
+            price = getattr(item, "price", None)
+            if isinstance(item, dict):
+                item_name = item.get("name")
+                price = item.get("price")
+            if item_name == name and price is not None:
+                try:
+                    return float(price)
+                except (TypeError, ValueError):
+                    return None
+    return None
+
+
+def _observed_issue_lines(signals: list[dict], mode: str, data) -> list[str]:
+    lines = []
+    if signals:
+        market_label = "국내외 시장" if mode == "KR" else "글로벌 시장"
+        summary = ", ".join(
+            f"{signal['name']} {signal['move']}" for signal in signals[:3]
+        )
+        lines.append(
+            f"1. {market_label}에서 {summary} 변동 관측, 뉴스 원인은 추가 교차확인 필요 "
+            "(프로그램 직접 수집)"
+        )
+    flow = _domestic_flow_sentence(data) if mode == "KR" else ""
+    if flow:
+        lines.append(f"{len(lines) + 1}. {flow} (한국투자 Open API)")
+    return lines
+
+
+def _rule_based_checkpoints(
+    signals: list[dict],
+    mode: str,
+    news: list[dict],
+) -> list[str]:
+    names = {signal["name"] for signal in signals}
+    points = []
+    if mode == "KR":
+        points.append("- 외국인 및 기관 현물 수급의 연속성 확인")
+    if names & {"WTI", "DXY", "US 2Y Treasury", "US 10Y Treasury", "US 30Y Treasury"}:
+        points.append("- 금리, 달러 및 유가 신호가 주식시장에 이어지는지 확인")
+    else:
+        points.append("- 주요 가격 신호의 다음 거래 연속성 확인")
+    if not news:
+        points.append("- 글로벌 원인 뉴스의 추가 교차확인")
+    return points[:3]
 
 
 def _build_prompt(
@@ -684,6 +870,7 @@ def _number_tokens(text: str) -> set[str]:
 def _call_gemini(
     api_key: str,
     prompt: str,
+    attempts: int = 2,
 ) -> str | None:
     payload = {
         "contents": [
@@ -697,47 +884,45 @@ def _call_gemini(
         },
     }
 
-    request = Request(
-        GEMINI_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "x-goog-api-key": api_key,
-            "Content-Type": ("application/json"),
-        },
-        method="POST",
-    )
-
-    try:
-        with urlopen(
-            request,
-            timeout=45,
-        ) as response:
-            result = json.loads(response.read().decode("utf-8"))
-
-    except HTTPError as exc:
-        error_body = exc.read().decode(
-            "utf-8",
-            errors="replace",
+    result = None
+    for attempt in range(1, max(1, attempts) + 1):
+        request = Request(
+            GEMINI_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "x-goog-api-key": api_key,
+                "Content-Type": "application/json",
+            },
+            method="POST",
         )
+        try:
+            with urlopen(request, timeout=35) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            break
+        except HTTPError as exc:
+            error_body = exc.read().decode("utf-8", errors="replace")
+            retryable = exc.code == 429 or 500 <= exc.code < 600
+            logger.warning(
+                "Gemini HTTP error %s (attempt %s/%s): %s",
+                exc.code,
+                attempt,
+                attempts,
+                error_body[:1000],
+            )
+            if not retryable or attempt >= attempts:
+                return None
+        except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "Gemini request failed (attempt %s/%s): %s",
+                attempt,
+                attempts,
+                exc,
+            )
+            if attempt >= attempts:
+                return None
+        time.sleep(1)
 
-        logger.warning(
-            "Gemini HTTP error %s: %s",
-            exc.code,
-            error_body[:1000],
-        )
-
-        return None
-
-    except (
-        URLError,
-        TimeoutError,
-        json.JSONDecodeError,
-    ) as exc:
-        logger.warning(
-            "Gemini request failed: %s",
-            exc,
-        )
-
+    if result is None:
         return None
 
     candidates = result.get(
@@ -800,6 +985,8 @@ def analyze_market(
         return _fallback(
             signals,
             news,
+            mode,
+            data,
         )
 
     prompt = _build_prompt(
@@ -827,4 +1014,6 @@ def analyze_market(
     return _fallback(
         signals,
         news,
+        mode,
+        data,
     )
