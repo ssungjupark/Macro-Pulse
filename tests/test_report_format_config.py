@@ -35,10 +35,18 @@ class ReportFormatConfigTests(unittest.TestCase):
         self.assertEqual(kr_schedule.cron, "30 07 * * 1-5")
         self.assertEqual(kr_schedule.local_time, "16:30 KST")
         self.assertEqual(kr_schedule.weekdays, "Mon-Fri")
+        self.assertEqual(
+            [backup.local_time for backup in kr_schedule.backups],
+            ["16:45 KST", "17:00 KST"],
+        )
 
         self.assertEqual(us_schedule.cron, "30 21 * * 1-5")
         self.assertEqual(us_schedule.local_time, "06:30 KST")
         self.assertEqual(us_schedule.weekdays, "Tue-Sat KST")
+        self.assertEqual(
+            [backup.local_time for backup in us_schedule.backups],
+            ["06:45 KST", "07:00 KST"],
+        )
 
     def test_generate_telegram_summary_uses_external_config_order(self):
         custom_config = {
@@ -131,16 +139,24 @@ class ReportFormatConfigTests(unittest.TestCase):
             workflow_text = handle.read()
 
         self.assertTrue(workflow_matches_config(workflow_text, config))
-        self.assertIn("# KR | 16:30 KST | 07:30 UTC | Mon-Fri", workflow_text)
+        self.assertIn("# KR primary | 16:30 KST | 07:30 UTC | Mon-Fri", workflow_text)
         self.assertEqual(
             render_daily_workflow_schedule_block(config),
             "\n".join(
                 [
                     "    # BEGIN GENERATED SCHEDULES",
-                    "    # KR | 16:30 KST | 07:30 UTC | Mon-Fri",
+                    "    # KR primary | 16:30 KST | 07:30 UTC | Mon-Fri",
                     "    - cron: '30 07 * * 1-5'",
-                    "    # US | 06:30 KST | 21:30 UTC | Tue-Sat KST",
+                    "    # KR backup | 16:45 KST | 07:45 UTC | Mon-Fri",
+                    "    - cron: '45 07 * * 1-5'",
+                    "    # KR backup | 17:00 KST | 08:00 UTC | Mon-Fri",
+                    "    - cron: '00 08 * * 1-5'",
+                    "    # US primary | 06:30 KST | 21:30 UTC | Tue-Sat KST",
                     "    - cron: '30 21 * * 1-5'",
+                    "    # US backup | 06:45 KST | 21:45 UTC | Tue-Sat KST",
+                    "    - cron: '45 21 * * 1-5'",
+                    "    # US backup | 07:00 KST | 22:00 UTC | Tue-Sat KST",
+                    "    - cron: '00 22 * * 1-5'",
                     "    # END GENERATED SCHEDULES",
                 ]
             ),
@@ -149,6 +165,9 @@ class ReportFormatConfigTests(unittest.TestCase):
         self.assertIn("- AUTO", workflow_text)
         self.assertIn("- KR", workflow_text)
         self.assertIn("- US", workflow_text)
+        self.assertIn("actions/cache/restore@v4", workflow_text)
+        self.assertIn("actions/cache/save@v4", workflow_text)
+        self.assertIn("cancel-in-progress: false", workflow_text)
 
 
 if __name__ == "__main__":

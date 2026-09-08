@@ -13,11 +13,11 @@ DEFAULT_DAILY_WORKFLOW_PATH = ".github/workflows/daily_report.yml"
 
 def get_workflow_schedule_entries(
     format_config: ReportFormatConfig | dict | None = None,
-) -> list[tuple[str, str, str, str, str]]:
+) -> list[tuple[str, str, str, str, str, str]]:
     config = normalize_report_format_config(
         format_config or load_report_format_config()
     )
-    entries: list[tuple[str, str, str, str, str]] = []
+    entries: list[tuple[str, str, str, str, str, str]] = []
 
     for mode, mode_config in config.modes.items():
         schedule = mode_config.workflow_schedule
@@ -30,7 +30,19 @@ def get_workflow_schedule_entries(
                 schedule.local_time,
                 schedule.utc_time,
                 schedule.weekdays,
+                "primary",
             )
+        )
+        entries.extend(
+            (
+                mode,
+                backup.cron,
+                backup.local_time,
+                backup.utc_time,
+                schedule.weekdays,
+                "backup",
+            )
+            for backup in schedule.backups
         )
 
     if not entries:
@@ -43,10 +55,15 @@ def render_daily_workflow_schedule_block(
     format_config: ReportFormatConfig | dict | None = None,
 ) -> str:
     lines = [SCHEDULE_BLOCK_START]
-    for mode, cron, local_time, utc_time, weekdays in get_workflow_schedule_entries(
-        format_config
-    ):
-        lines.append(f"    # {mode} | {local_time} | {utc_time} | {weekdays}")
+    for (
+        mode,
+        cron,
+        local_time,
+        utc_time,
+        weekdays,
+        role,
+    ) in get_workflow_schedule_entries(format_config):
+        lines.append(f"    # {mode} {role} | {local_time} | {utc_time} | {weekdays}")
         lines.append(f"    - cron: '{cron}'")
     lines.append(SCHEDULE_BLOCK_END)
     return "\n".join(lines)

@@ -6,7 +6,19 @@
         "cron": "30 07 * * 1-5",
         "local_time": "16:30 KST",
         "utc_time": "07:30 UTC",
-        "weekdays": "Mon-Fri"
+        "weekdays": "Mon-Fri",
+        "backups": [
+          {
+            "cron": "45 07 * * 1-5",
+            "local_time": "16:45 KST",
+            "utc_time": "07:45 UTC"
+          },
+          {
+            "cron": "00 08 * * 1-5",
+            "local_time": "17:00 KST",
+            "utc_time": "08:00 UTC"
+          }
+        ]
       },
       "summary_sections": [
         {
@@ -65,7 +77,19 @@
         "cron": "30 21 * * 1-5",
         "local_time": "06:30 KST",
         "utc_time": "21:30 UTC",
-        "weekdays": "Tue-Sat KST"
+        "weekdays": "Tue-Sat KST",
+        "backups": [
+          {
+            "cron": "45 21 * * 1-5",
+            "local_time": "06:45 KST",
+            "utc_time": "21:45 UTC"
+          },
+          {
+            "cron": "00 22 * * 1-5",
+            "local_time": "07:00 KST",
+            "utc_time": "22:00 UTC"
+          }
+        ]
       },
       "summary_sections": [
         {

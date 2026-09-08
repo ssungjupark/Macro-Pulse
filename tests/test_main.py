@@ -71,7 +71,7 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
                 ) as telegram_summary,
                 patch(
                     "macro_pulse.app.cli.analyze_market",
-                    return_value="[시장 해석]\n없음\n\n[체크 포인트]\n없음",
+                    return_value="[오늘의 핵심 이슈]\n없음",
                 ),
                 patch("macro_pulse.app.cli.get_upcoming_events", return_value=[]),
                 patch(
@@ -95,3 +95,36 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             html_report.assert_called_once_with(data)
             telegram_summary.assert_called_once_with(data, "US", config)
             telegram.assert_not_awaited()
+
+    async def test_main_fails_when_telegram_delivery_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch("macro_pulse.app.cli.fetch_all_data", return_value={}),
+                patch("macro_pulse.app.cli.generate_html_report", return_value="html"),
+                patch(
+                    "macro_pulse.app.cli.generate_telegram_summary",
+                    return_value="summary",
+                ),
+                patch(
+                    "macro_pulse.app.cli.analyze_market",
+                    return_value="[오늘의 핵심 이슈]\n없음",
+                ),
+                patch("macro_pulse.app.cli.get_upcoming_events", return_value=[]),
+                patch("macro_pulse.app.cli.capture_screenshots", return_value=[]),
+                patch(
+                    "macro_pulse.app.cli.send_telegram_report",
+                    new_callable=AsyncMock,
+                    return_value=False,
+                ),
+                patch.dict(
+                    os.environ,
+                    {"TELEGRAM_BOT_TOKEN": "token", "TELEGRAM_CHAT_ID": "chat"},
+                ),
+            ):
+                previous_cwd = os.getcwd()
+                os.chdir(temp_dir)
+                try:
+                    with self.assertRaisesRegex(RuntimeError, "delivery failed"):
+                        await app_main.main(["--market", "US"])
+                finally:
+                    os.chdir(previous_cwd)

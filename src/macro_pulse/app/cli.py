@@ -86,9 +86,7 @@ def compose_telegram_report(
         signal_lines.append("기준치 이상의 특이 변동 신호 없음")
 
     normalized_analysis = analysis or (
-        "[시장 해석]\n검증된 자동 해석 없음\n\n"
-        "[핵심 이슈]\n검증 조건을 충족한 핵심 이슈 없음\n\n"
-        "[체크 포인트]\n공식 일정과 데이터 정상화 여부 확인"
+        "[오늘의 핵심 이슈]\n검증 기준을 충족한 주요 뉴스를 수집하지 못했습니다."
     )
     normalized_analysis = insert_event_section(normalized_analysis, events)
     signal_section = "\n".join(signal_lines)
@@ -150,6 +148,11 @@ async def main(
         logger.info("Dry run complete. No notifications sent.")
         return 0
 
+    telegram_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    telegram_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if not telegram_token or not telegram_chat_id:
+        raise RuntimeError("Telegram credentials missing; report was not delivered")
+
     screenshot_paths = capture_screenshots(
         get_screenshot_targets(
             mode,
@@ -158,17 +161,15 @@ async def main(
     )
 
     try:
-        telegram_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-
-        telegram_chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-
-        if telegram_token and telegram_chat_id:
-            await send_telegram_report(
-                telegram_token,
-                telegram_chat_id,
-                telegram_summary,
-                image_paths=screenshot_paths,
-            )
+        delivered = await send_telegram_report(
+            telegram_token,
+            telegram_chat_id,
+            telegram_summary,
+            image_paths=screenshot_paths,
+            delivery_receipt_path=os.environ.get("DELIVERY_RECEIPT_PATH"),
+        )
+        if not delivered:
+            raise RuntimeError("Telegram report delivery failed")
 
     finally:
         cleanup_files(screenshot_paths)

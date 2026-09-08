@@ -19,13 +19,16 @@ jobs:
     - name: Build runtime image
       run: docker build -t macro-pulse:ci .
 
+    - name: Check Python code
+      run: docker run --rm macro-pulse:ci uv run --frozen ruff check .
+
     - name: Run unit tests in Docker
       run: |
         docker run --rm \
           -v "$PWD:/app" \
           -w /app \
           macro-pulse:ci \
-          sh -lc "uv run --frozen python -m unittest discover tests 2>&1 | tee unit-test.log"
+          bash -o pipefail -lc 'uv run --frozen python -m unittest discover tests 2>&1 | tee unit-test.log'
 
     - name: Upload CI artifacts
       if: always()

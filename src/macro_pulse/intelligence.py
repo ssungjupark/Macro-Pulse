@@ -5,6 +5,8 @@ import os
 import re
 import time
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from email.utils import parsedate_to_datetime
 from urllib.error import HTTPError, URLError
@@ -163,16 +165,6 @@ TITLE_STOPWORDS = {
 }
 
 
-def _signal_text(signals: list[dict]) -> str:
-    if not signals:
-        return "- 기준치 이상의 특이 변동 신호 없음"
-
-    return "\n".join(
-        f"- {signal['name']}: {signal['move']} ({signal['direction']})"
-        for signal in signals[:5]
-    )
-
-
 def _query_spec(name: str) -> tuple[str, str, str, str]:
     mapping = {
         "S&P 500": (
@@ -308,63 +300,41 @@ def _query_spec(name: str) -> tuple[str, str, str, str]:
     )
 
 
-def _broad_specs(
-    mode: str,
-) -> list[tuple[str, str, str, str]]:
-    if mode == "KR":
-        return [
-            (
-                "global markets oil Treasury yields Asia stocks when:1d",
-                "en-US",
-                "US",
-                "US:en",
-            ),
-            (
-                "Middle East oil inflation stocks Reuters Bloomberg when:1d",
-                "en-US",
-                "US",
-                "US:en",
-            ),
-            (
-                "코스피 증시 반도체 외국인 삼성전자 SK하이닉스 when:1d",
-                "ko",
-                "KR",
-                "KR:ko",
-            ),
-            (
-                "한국은행 원달러 환율 국고채 한국 증시 when:1d",
-                "ko",
-                "KR",
-                "KR:ko",
-            ),
-            (
-                "중국 증시 상하이 경기부양 한국 증시 when:1d",
-                "ko",
-                "KR",
-                "KR:ko",
-            ),
-        ]
-
-    return [
-        (
-            "US stock market Nasdaq S&P 500 Nvidia earnings when:1d",
-            "en-US",
-            "US",
-            "US:en",
-        ),
-        (
-            "Federal Reserve Treasury yields dollar stocks when:1d",
-            "en-US",
-            "US",
-            "US:en",
-        ),
-        (
-            "AI semiconductor Nvidia AMD Broadcom stocks when:1d",
-            "en-US",
-            "US",
-            "US:en",
-        ),
+def _broad_specs(mode: str) -> list[tuple[str, str, str, str]]:
+    topics = "(stocks OR markets OR Fed OR inflation OR oil)"
+    specs = [
+        (f"{topics} site:{domain} when:1d", "en-US", "US", "US:en")
+        for domain in ("reuters.com", "bloomberg.com", "cnbc.com")
     ]
+    if mode == "KR":
+        specs.extend(
+            (
+                f"(Korea OR Kospi OR Samsung OR Hynix) site:{domain} when:1d",
+                "en-US",
+                "US",
+                "US:en",
+            )
+            for domain in ("reuters.com", "bloomberg.com")
+        )
+        specs.append(
+            (
+                "(코스피 OR 반도체 OR 환율 OR 한국은행) site:yna.co.kr when:1d",
+                "ko",
+                "KR",
+                "KR:ko",
+            )
+        )
+    else:
+        specs.extend(
+            (
+                f"(Nvidia OR Broadcom OR earnings) site:{domain} when:1d",
+                "en-US",
+                "US",
+                "US:en",
+            )
+            for domain in ("reuters.com", "cnbc.com")
+        )
+    return specs
 
 
 def _fetch_rss(
@@ -411,7 +381,7 @@ def _fetch_rss(
 
     articles = []
 
-    for item in root.findall(".//item")[:8]:
+    for item in root.findall(".//item")[:40]:
         title = (item.findtext("title") or "").strip()
 
         source = (item.findtext("source") or "").strip()
@@ -424,6 +394,7 @@ def _fetch_rss(
                     "title": title,
                     "source": source,
                     "published": published,
+                    "url": (item.findtext("link") or "").strip(),
                 }
             )
 
@@ -438,17 +409,30 @@ def _fetch_news(
 
     specs.extend(_query_spec(signal["name"]) for signal in signals[:4])
 
-    articles = []
+    specs = list(dict.fromkeys(specs))
 
-    for spec in specs:
-        for article in _fetch_rss(spec):
-            if not is_allowed_source(article.get("source", ""), mode):
-                continue
-            articles.append(article)
+    articles = []
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=24)).timestamp()
+
+    with ThreadPoolExecutor(max_workers=min(8, len(specs))) as executor:
+        results = executor.map(_fetch_rss, specs)
+        for result in results:
+            for article in result:
+                if not is_allowed_source(article.get("source", ""), mode):
+                    continue
+                if (
+                    not cutoff
+                    <= _published_timestamp(article.get("published", ""))
+                    <= now.timestamp()
+                ):
+                    continue
+                articles.append(article)
 
     articles = verify_and_deduplicate_articles(articles, mode)
     articles.sort(
         key=lambda article: (
+            len({_canonical_source(source) for source in article["verified_by"]}),
             is_official_source(article["source"]),
             _published_timestamp(article.get("published", "")),
         ),
@@ -456,7 +440,7 @@ def _fetch_news(
     )
 
     logger.info(
-        "Collected %s verified Google News headlines",
+        "Collected %s corroborated or official Google News headlines",
         len(articles),
     )
 
@@ -535,6 +519,10 @@ def verify_and_deduplicate_articles(
         )
         representative = dict(representative)
         representative["verified_by"] = sorted(sources.values())
+        representative["supporting_headlines"] = [
+            f"{article['source']}: {article['title']}" for article in group
+        ]
+        representative["verification"] = "official" if official else "cross"
         verified.append(representative)
     return verified
 
@@ -615,7 +603,8 @@ def _news_text(
         f"{article['title']} | "
         f"{article['source'] or '출처 미상'} | "
         f"{article['published']} | "
-        f"검증: {', '.join(article.get('verified_by', []))}"
+        f"확인 출처: {', '.join(article.get('verified_by', []))} | "
+        f"관련 헤드라인: {' / '.join(article.get('supporting_headlines', []))}"
         for index, article in enumerate(
             news,
             start=1,
@@ -629,129 +618,16 @@ def _fallback(
     mode: str = "US",
     data=None,
 ) -> str:
-    lines = ["[시장 해석]", *_rule_based_interpretation(signals, mode, data)]
-
-    lines.extend(["", "[핵심 이슈]"])
+    del signals, mode, data
+    lines = ["[오늘의 핵심 이슈]"]
     if news:
         for index, article in enumerate(news[:3], 1):
-            verified_by = article.get("verified_by") or [article["source"]]
-            lines.append(f"{index}. {article['title']} ({', '.join(verified_by)})")
+            title = article["title"].removesuffix(f" - {article['source']}")
+            lines.append(f"{index}. {title} ({article['source']})")
     else:
-        observed = _observed_issue_lines(signals, mode, data)
-        lines.extend(observed or ["검증된 뉴스 원인을 확보하지 못했습니다."])
-
-    lines.extend(["", "[체크 포인트]"])
-    lines.extend(_rule_based_checkpoints(signals, mode, news))
+        lines.append("검증 기준을 충족한 주요 뉴스를 수집하지 못했습니다.")
 
     return "\n".join(lines)
-
-
-def _rule_based_interpretation(signals: list[dict], mode: str, data) -> list[str]:
-    if signals:
-        equity_names = (
-            {"KOSPI", "KOSDAQ", "Nikkei 225", "Hang Seng", "Shanghai Composite"}
-            if mode == "KR"
-            else {"S&P 500", "Nasdaq", "SOX", "Russell 2000", "Euro Stoxx 50"}
-        )
-        equity = [signal for signal in signals if signal["name"] in equity_names]
-        macro = [signal for signal in signals if signal not in equity]
-        lines = []
-        if equity:
-            lines.append(
-                "주식시장은 "
-                + ", ".join(
-                    f"{signal['name']} {signal['move']}" for signal in equity[:4]
-                )
-                + "의 변동 신호가 나타났습니다."
-            )
-        if macro:
-            lines.append(
-                "금리, 달러 및 원자재 관련 신호는 "
-                + ", ".join(
-                    f"{signal['name']} {signal['move']}" for signal in macro[:3]
-                )
-                + "로 집계됐습니다."
-            )
-    else:
-        lines = ["기준치 이상의 특이 가격 변동은 확인되지 않았습니다."]
-
-    if mode == "KR":
-        flow = _domestic_flow_sentence(data)
-        if flow:
-            lines.append(flow)
-
-    if len(lines) == 1:
-        lines.append("직접 수집한 가격 기준으로 다음 거래의 연속성을 확인해야 합니다.")
-    return lines[:3]
-
-
-def _domestic_flow_sentence(data) -> str:
-    values = []
-    for name in (
-        "외국인 KOSPI 현물",
-        "기관 KOSPI 현물",
-        "외국인 KOSDAQ 현물",
-        "기관 KOSDAQ 현물",
-    ):
-        value = _snapshot_price(data, name)
-        if value is not None:
-            values.append(f"{name} {value:+,.0f}억원")
-    if not values:
-        return ""
-    return "국내 현물 수급은 " + ", ".join(values) + "으로 집계됐습니다."
-
-
-def _snapshot_price(data, name: str) -> float | None:
-    if not data:
-        return None
-    for items in data.values():
-        for item in items:
-            item_name = getattr(item, "name", None)
-            price = getattr(item, "price", None)
-            if isinstance(item, dict):
-                item_name = item.get("name")
-                price = item.get("price")
-            if item_name == name and price is not None:
-                try:
-                    return float(price)
-                except (TypeError, ValueError):
-                    return None
-    return None
-
-
-def _observed_issue_lines(signals: list[dict], mode: str, data) -> list[str]:
-    lines = []
-    if signals:
-        market_label = "국내외 시장" if mode == "KR" else "글로벌 시장"
-        summary = ", ".join(
-            f"{signal['name']} {signal['move']}" for signal in signals[:3]
-        )
-        lines.append(
-            f"1. {market_label}에서 {summary} 변동 관측, 뉴스 원인은 추가 교차확인 필요 "
-            "(프로그램 직접 수집)"
-        )
-    flow = _domestic_flow_sentence(data) if mode == "KR" else ""
-    if flow:
-        lines.append(f"{len(lines) + 1}. {flow} (한국투자 Open API)")
-    return lines
-
-
-def _rule_based_checkpoints(
-    signals: list[dict],
-    mode: str,
-    news: list[dict],
-) -> list[str]:
-    names = {signal["name"] for signal in signals}
-    points = []
-    if mode == "KR":
-        points.append("- 외국인 및 기관 현물 수급의 연속성 확인")
-    if names & {"WTI", "DXY", "US 2Y Treasury", "US 10Y Treasury", "US 30Y Treasury"}:
-        points.append("- 금리, 달러 및 유가 신호가 주식시장에 이어지는지 확인")
-    else:
-        points.append("- 주요 가격 신호의 다음 거래 연속성 확인")
-    if not news:
-        points.append("- 글로벌 원인 뉴스의 추가 교차확인")
-    return points[:3]
 
 
 def _build_prompt(
@@ -760,78 +636,53 @@ def _build_prompt(
     news: list[dict],
     data=None,
 ) -> str:
+    del signals, data
     market = "한국 및 아시아 증시" if mode == "KR" else "미국 및 글로벌 증시"
 
     return f"""
 당신은 증권사 리서치센터의 데일리 시황 담당자입니다.
 
-분석 대상: {market}
-
-[자동 탐지 시장 신호]
-{_signal_text(signals)}
-
-[프로그램 직접 수집 시장 수치]
-{_market_data_text(data)}
+정리 대상: {market}
 
 [최근 24시간 뉴스 헤드라인]
 {_news_text(news)}
 
-위 데이터만 근거로 오늘 시장의 핵심 원인과 이슈를 정리하세요.
+위 헤드라인만 근거로 오늘 투자자가 알아야 할 중요한 이슈를 정리하세요.
 
 작성 원칙:
-- 뉴스에 명시된 사실을 우선 사용하세요.
-- 여러 기사에서 반복되는 원인을 가장 중요한 원인으로 판단하세요.
-- 직접 근거가 있는데도 '원인 확인되지 않음'이라고 쓰지 마세요.
+- 통화정책, 경제지표, 지정학 및 에너지, 주요 기업 실적, AI 및 반도체 중 당일 시장 영향이 큰 사안을 우선하세요.
+- 여러 허용 매체가 함께 보도한 이슈를 먼저 배치하세요.
 - 뉴스에 없는 사실은 만들지 마세요.
-- 헤드라인만으로 인과관계를 확정하거나 기사에 없는 숫자를 추가하지 마세요.
-- 숫자는 [프로그램 직접 수집 시장 수치]를 우선하고 뉴스 숫자로 덮어쓰지 마세요.
-- 공식 자료 한 곳 또는 서로 다른 허용 매체 두 곳으로 검증된 기사만 제공되었습니다.
-- 직접 근거가 약한 항목에만 '추가 확인 필요'라고 표시하세요.
-- 특이 변동 신호가 없어도 중요한 정책, 실적, 금리, 환율 이슈는 포함하세요.
-- 한국 시장은 외국인 수급, 삼성전자·SK하이닉스, 반도체, 한국은행, 중국 증시, 환율을 우선 연결하세요.
-- 한국 시장은 반드시 '해외 허용 매체가 확인한 글로벌 원인 → 프로그램이 직접 수집한 국내 가격·수급 반응' 순서로 서술하세요.
-- 미국 시장은 Nvidia 등 빅테크 실적, 반도체, Fed, 국채금리, 달러를 우선 연결하세요.
-- 각 핵심 이슈 끝에 실제 뉴스 출처명을 괄호로 표시하세요.
+- 헤드라인에 없는 원인, 전망, 숫자를 추가하지 마세요.
+- 공식 자료 한 곳 또는 서로 다른 허용 매체 두 곳의 관련 보도가 있는 이슈만 제공되었습니다.
+- 같은 주제라도 두 기사가 모두 확인한 내용만 공통 사실로 쓰고, 특정 매체에만 나온 사실은 그 매체의 보도라고 명시하세요.
+- 한국 시장은 국내 증시에 직접 관련된 이슈와 글로벌 증시에 영향을 주는 이슈를 함께 고르세요.
+- 미국 시장은 Fed, 국채금리, 경제지표, 빅테크 실적, AI 및 반도체 이슈를 우선하세요.
+- 각 항목은 제목 한 줄과 핵심 내용 한 문장으로 끝내세요.
+- 각 항목 끝에 실제 뉴스 출처명을 괄호로 표시하세요.
 - 투자 추천과 목표주가는 쓰지 마세요.
-- 전체 답변은 700자 이내로 작성하세요.
+- 중요도가 낮으면 세 항목을 억지로 채우지 마세요.
+- 전체 답변은 600자 이내로 작성하세요.
+- 가운데점 대신 쉼표를 사용하세요.
 
 반드시 아래 형식만 사용하세요.
 
-[시장 해석]
-2~3문장
-
-[핵심 이슈]
-1. 원인 → 시장 영향 (출처)
-2. 원인 → 시장 영향 (출처)
-3. 필요한 경우 추가 이슈 (출처)
-
-[체크 포인트]
-다음 거래에서 확인할 변수 2~3개
+[오늘의 핵심 이슈]
+1. 이슈 제목
+핵심 내용 한 문장 (출처1, 출처2)
+2. 이슈 제목
+핵심 내용 한 문장 (출처1, 출처2)
 """.strip()
 
 
-def _market_data_text(data) -> str:
-    if not data:
-        return "- 제공되지 않음"
-    lines = []
-    seen = set()
-    for items in data.values():
-        for item in items:
-            if item.price is None or item.name in seen:
-                continue
-            seen.add(item.name)
-            move = (
-                f", 전일 {item.change_pct:+.2f}%" if item.change_pct is not None else ""
-            )
-            lines.append(f"- {item.name}: {item.price:,.3f}{move}")
-    return "\n".join(lines[:30]) or "- 제공되지 않음"
-
-
 def _has_required_analysis_sections(analysis: str) -> bool:
-    headings = ("[시장 해석]", "[핵심 이슈]", "[체크 포인트]")
-    positions = [analysis.find(heading) for heading in headings]
-    return all(position >= 0 for position in positions) and positions == sorted(
-        positions
+    return (
+        len(analysis) <= 900
+        and analysis.startswith("[오늘의 핵심 이슈]")
+        and not any(
+            heading in analysis
+            for heading in ("[시장 해석]", "[핵심 이슈]", "[체크 포인트]")
+        )
     )
 
 
@@ -843,9 +694,12 @@ def _analysis_uses_only_supported_numbers(
 ) -> bool:
     support_text = "\n".join(
         [
-            _signal_text(signals),
-            _market_data_text(data),
             *(article.get("title", "") for article in news),
+            *(
+                title
+                for article in news
+                for title in article.get("supporting_headlines", [])
+            ),
         ]
     )
     supported = _number_tokens(support_text)
@@ -979,8 +833,12 @@ def analyze_market(
 
     api_key = os.environ.get("GEMINI_API_KEY")
 
-    if not api_key:
-        logger.warning("GEMINI_API_KEY missing")
+    if not news or not api_key:
+        logger.info(
+            "Using headline fallback: news=%s, AI configured=%s",
+            len(news),
+            bool(api_key),
+        )
 
         return _fallback(
             signals,

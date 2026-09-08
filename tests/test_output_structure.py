@@ -32,7 +32,7 @@ class OutputStructureTests(unittest.TestCase):
         report = compose_telegram_report(
             summary,
             [],
-            ("[시장 해석]\n내용\n\n[핵심 이슈]\n내용\n\n[체크 포인트]\n내용"),
+            "[오늘의 핵심 이슈]\n내용",
             [
                 EconomicEvent(
                     date(2026, 9, 4),
@@ -50,10 +50,8 @@ class OutputStructureTests(unittest.TestCase):
             "[환율]",
             "[수급 및 시장 체력]",
             "[주요 변동 신호]",
-            "[시장 해석]",
-            "[핵심 이슈]",
+            "[오늘의 핵심 이슈]",
             "[주요 일정]",
-            "[체크 포인트]",
         ]
 
         self.assertEqual(
@@ -90,10 +88,8 @@ class OutputStructureTests(unittest.TestCase):
             "[달러 및 환율]",
             "[암호화폐]",
             "[주요 변동 신호]",
-            "[시장 해석]",
-            "[핵심 이슈]",
+            "[오늘의 핵심 이슈]",
             "[주요 일정]",
-            "[체크 포인트]",
         ]
 
         self.assertEqual(

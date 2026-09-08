@@ -1,5 +1,6 @@
 import os
 from asyncio import sleep
+from pathlib import Path
 
 from telegram import Bot
 
@@ -16,6 +17,7 @@ async def send_telegram_report(
     image_path=None,
     image_paths=None,
     attempts=2,
+    delivery_receipt_path=None,
 ):
     if not token or not chat_id:
         logger.info("Telegram token or chat_id missing. Skipping Telegram.")
@@ -50,6 +52,12 @@ async def send_telegram_report(
                 return False
 
             await sleep(1)
+
+    # Persist the text receipt before optional photos so backup runs do not repeat it.
+    if delivery_receipt_path:
+        receipt = Path(delivery_receipt_path)
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+        receipt.write_text("text-delivered\n", encoding="utf-8")
 
     # 2. 이미지는 이미지별로 따로 재시도
     for photo_path in photo_paths:

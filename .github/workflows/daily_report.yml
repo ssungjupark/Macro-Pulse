@@ -3,10 +3,18 @@ name: Daily Macro Pulse Report
 on:
   schedule:
     # BEGIN GENERATED SCHEDULES
-    # KR | 16:30 KST | 07:30 UTC | Mon-Fri
+    # KR primary | 16:30 KST | 07:30 UTC | Mon-Fri
     - cron: '30 07 * * 1-5'
-    # US | 06:30 KST | 21:30 UTC | Tue-Sat KST
+    # KR backup | 16:45 KST | 07:45 UTC | Mon-Fri
+    - cron: '45 07 * * 1-5'
+    # KR backup | 17:00 KST | 08:00 UTC | Mon-Fri
+    - cron: '00 08 * * 1-5'
+    # US primary | 06:30 KST | 21:30 UTC | Tue-Sat KST
     - cron: '30 21 * * 1-5'
+    # US backup | 06:45 KST | 21:45 UTC | Tue-Sat KST
+    - cron: '45 21 * * 1-5'
+    # US backup | 07:00 KST | 22:00 UTC | Tue-Sat KST
+    - cron: '00 22 * * 1-5'
     # END GENERATED SCHEDULES
   workflow_dispatch:
     inputs:
@@ -26,12 +34,14 @@ permissions:
   id-token: write
 
 concurrency:
-  group: github-pages
-  cancel-in-progress: true
+  group: macro-pulse-daily-report
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      report_created: ${{ steps.complete.outputs.report_created }}
     env:
       REPORT_FORMAT_CONFIG: config/report_formats.json
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -39,24 +49,45 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
       KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
-      REPORT_MARKET: ${{ github.event.inputs.market || 'AUTO' }}
-      
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
 
+    - name: Resolve report context
+      id: context
+      env:
+        MANUAL_MARKET: ${{ github.event.inputs.market || 'AUTO' }}
+        TRIGGER_CRON: ${{ github.event.schedule || '' }}
+      run: PYTHONPATH=src python -m macro_pulse.workflows.delivery_context
+
+    - name: Check whether scheduled report was already sent
+      if: github.event_name == 'schedule'
+      id: sent-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: .macro-pulse-delivery
+        key: ${{ steps.context.outputs.cache_key }}
+
     - name: Build runtime image
+      if: steps.sent-cache.outputs.cache-hit != 'true'
       run: docker build -t macro-pulse:daily .
 
     - name: Run unit tests in Docker
+      if: steps.sent-cache.outputs.cache-hit != 'true'
       run: |
         docker run --rm \
           -v "$PWD:/app" \
           -w /app \
           macro-pulse:daily \
-          sh -lc "uv run --frozen python -m unittest discover tests 2>&1 | tee unit-test.log"
+          bash -o pipefail -lc 'uv run --frozen python -m unittest discover tests 2>&1 | tee unit-test.log'
 
     - name: Run Macro Pulse Bot in Docker
+      id: bot
+      if: steps.sent-cache.outputs.cache-hit != 'true'
+      env:
+        REPORT_MARKET: ${{ steps.context.outputs.market }}
+        DELIVERY_RECEIPT_PATH: ${{ github.event_name == 'schedule' && '.macro-pulse-delivery/sent' || '' }}
       run: |
         docker run --rm \
           -e REPORT_FORMAT_CONFIG \
@@ -66,33 +97,41 @@ jobs:
           -e KIS_APP_KEY \
           -e KIS_APP_SECRET \
           -e REPORT_MARKET \
+          -e DELIVERY_RECEIPT_PATH \
           -v "$PWD:/app" \
           -w /app \
           macro-pulse:daily \
-          sh -lc "uv run --frozen python src/main.py --market \"$REPORT_MARKET\" 2>&1 | tee macro-pulse.log"
-      
+          bash -o pipefail -lc 'uv run --frozen python src/main.py --market "$REPORT_MARKET" 2>&1 | tee macro-pulse.log'
+
+    - name: Save scheduled delivery receipt
+      if: always() && github.event_name == 'schedule' && steps.sent-cache.outputs.cache-hit != 'true' && hashFiles('.macro-pulse-delivery/sent') != ''
+      uses: actions/cache/save@v4
+      with:
+        path: .macro-pulse-delivery
+        key: ${{ steps.context.outputs.cache_key }}
+
     - name: Validate generated report
-      if: success()
+      if: success() && steps.sent-cache.outputs.cache-hit != 'true'
       run: test -s macro_pulse_report.html
 
     - name: Prepare public directory
-      if: success()
+      if: success() && steps.sent-cache.outputs.cache-hit != 'true'
       run: |
         mkdir -p public
         mv macro_pulse_report.html public/index.html
 
     - name: Configure GitHub Pages
-      if: success()
+      if: success() && steps.sent-cache.outputs.cache-hit != 'true'
       uses: actions/configure-pages@v5
 
     - name: Upload GitHub Pages artifact
-      if: success()
+      if: success() && steps.sent-cache.outputs.cache-hit != 'true'
       uses: actions/upload-pages-artifact@v4
       with:
         path: ./public
 
     - name: Upload workflow artifacts
-      if: always()
+      if: always() && steps.sent-cache.outputs.cache-hit != 'true'
       uses: actions/upload-artifact@v6
       with:
         name: daily-report-artifacts
@@ -103,8 +142,13 @@ jobs:
           unit-test.log
         if-no-files-found: ignore
 
+    - name: Record report creation
+      id: complete
+      if: success() && steps.sent-cache.outputs.cache-hit != 'true'
+      run: echo "report_created=true" >> "$GITHUB_OUTPUT"
+
   deploy:
-    if: ${{ needs.build.result == 'success' }}
+    if: ${{ needs.build.outputs.report_created == 'true' }}
     needs: build
     runs-on: ubuntu-latest
     environment:
