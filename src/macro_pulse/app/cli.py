@@ -20,6 +20,7 @@ from ..event_results import (
     insert_event_result_section,
 )
 from ..events import get_upcoming_events, insert_event_section
+from ..fomc_results import build_recent_fomc_result_section
 from ..intelligence import analyze_market
 from ..reporting.generator import (
     generate_html_report,
@@ -102,6 +103,24 @@ def compose_telegram_report(
     return f"{base_summary}\n\n{signal_section}\n\n{normalized_analysis}"
 
 
+def build_event_results(events) -> str:
+    sections = []
+
+    fomc_section = build_recent_fomc_result_section(events)
+    if fomc_section:
+        sections.append(fomc_section.removeprefix("[발표 결과]\n"))
+
+    non_fomc_events = [event for event in events if "FOMC" not in event.title]
+    generic_section = build_recent_event_result_section(non_fomc_events)
+    if generic_section:
+        sections.append(generic_section.removeprefix("[발표 결과]\n"))
+
+    if not sections:
+        return ""
+
+    return "[발표 결과]\n" + "\n\n".join(sections)
+
+
 async def main(
     argv: list[str] | None = None,
 ) -> int:
@@ -135,7 +154,7 @@ async def main(
         for event in get_upcoming_events(recent_start, limit=20)
         if recent_start <= event.event_date <= today
     ]
-    event_results = build_recent_event_result_section(recent_events)
+    event_results = build_event_results(recent_events)
     telegram_summary = compose_telegram_report(
         base_summary,
         signals,
