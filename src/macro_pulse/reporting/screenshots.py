@@ -179,6 +179,66 @@ def position_element_for_capture(driver, element, top_offset=160):
     time.sleep(1)
 
 
+def dismiss_finviz_overlays(driver):
+    """Remove Finviz promotional dialogs/backdrops that can cover the heatmap."""
+    removed = driver.execute_script(
+        """
+        const map = document.getElementById('canvas-wrapper');
+        const phrases = [
+            'Upgrade your Finviz Experience',
+            'Learn more about Finviz Elite',
+            'Finviz Elite'
+        ];
+        let removedCount = 0;
+
+        // First remove a dialog ancestor identified by its promotional text.
+        for (const node of Array.from(document.querySelectorAll('body *'))) {
+            const text = (node.innerText || '').trim();
+            if (!text || !phrases.some((phrase) => text.includes(phrase))) {
+                continue;
+            }
+
+            let current = node;
+            for (let depth = 0; depth < 10 && current && current !== document.body; depth++) {
+                const style = window.getComputedStyle(current);
+                const rect = current.getBoundingClientRect();
+                const positioned = style.position === 'fixed' || style.position === 'absolute';
+                if (positioned && rect.width >= 250 && rect.height >= 120) {
+                    current.remove();
+                    removedCount += 1;
+                    break;
+                }
+                current = current.parentElement;
+            }
+        }
+
+        // Then remove any full-screen fixed backdrop that still sits above the map.
+        for (const node of Array.from(document.querySelectorAll('body *'))) {
+            if (!node.isConnected || node === map || (map && node.contains(map))) {
+                continue;
+            }
+            const style = window.getComputedStyle(node);
+            const rect = node.getBoundingClientRect();
+            const zIndex = Number.parseInt(style.zIndex || '0', 10) || 0;
+            const coversViewport =
+                rect.width >= window.innerWidth * 0.7 &&
+                rect.height >= window.innerHeight * 0.7;
+            if (style.position === 'fixed' && coversViewport && zIndex >= 10) {
+                node.remove();
+                removedCount += 1;
+            }
+        }
+
+        document.documentElement.style.overflow = 'auto';
+        document.body.style.overflow = 'auto';
+        return removedCount;
+        """
+    )
+    if removed:
+        logger.info("Removed %s Finviz overlay element(s) before capture", removed)
+        time.sleep(1)
+
+
 def take_finviz_screenshot(output_path=None):
     driver = get_chrome_driver()
     if not driver:
@@ -196,7 +256,12 @@ def take_finviz_screenshot(output_path=None):
 
         logger.info("Waiting for canvas to render...")
         time.sleep(5)
+        dismiss_finviz_overlays(driver)
 
+        # Re-fetch the element after DOM cleanup in case Finviz re-rendered the map.
+        element = WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located((By.ID, "canvas-wrapper"))
+        )
         element.screenshot(output_path)
         logger.info("Screenshot saved to %s", output_path)
         return output_path
