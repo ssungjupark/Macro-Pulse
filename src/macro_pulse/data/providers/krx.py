@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
+
+import requests
 
 from ...core.logging import get_logger
 from ...domain.models import ValueFormat
@@ -18,8 +19,21 @@ logger = get_logger(__name__)
 
 KRX_JSON_URL = "https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
 KRX_REFERER = "https://data.krx.co.kr/contents/MDC/MDI/outerLoader/index.cmd"
-REQUEST_TIMEOUT_SECONDS = 4
+KRX_LOGIN_PAGE = "https://data.krx.co.kr/contents/MDC/COMS/client/MDCCOMS001.cmd"
+KRX_LOGIN_JSP = (
+    "https://data.krx.co.kr/contents/MDC/COMS/client/view/login.jsp?site=mdc"
+)
+KRX_LOGIN_URL = "https://data.krx.co.kr/contents/MDC/COMS/client/MDCCOMS001D1.cmd"
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+REQUEST_TIMEOUT_SECONDS = 8
+LOGIN_TIMEOUT_SECONDS = 15
 MAX_WORKERS = 3
+
+_AUTH_LOCK = threading.Lock()
+_AUTH_COOKIES: dict[str, str] | None = None
 
 MARKET_NAMES = {"STK": "KOSPI", "KSQ": "KOSDAQ"}
 INDEX_MARKETS = {"02": "KOSPI", "03": "KOSDAQ"}
@@ -85,12 +99,11 @@ def won_to_100m(value: float | int | str | None) -> float | None:
 
 
 def fetch_krx_market_state(today: date | None = None) -> dict[str, list]:
-    """Fetch KRX cash-market flow/breadth without broker authentication.
+    """Fetch authenticated KRX cash-market flow and breadth data."""
+    if _get_auth_cookies() is None:
+        logger.warning("KRX login unavailable; skipping authenticated market data")
+        return unavailable_krx_market_state("KRX 로그인 실패")
 
-    On normal weekdays we only accept the requested day's data so a delayed KRX
-    update can never silently turn into yesterday's flow. Weekend manual runs
-    may fall back to the most recent weekday.
-    """
     target = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
     candidates = _candidate_dates(target)
 
@@ -131,6 +144,84 @@ def _candidate_dates(target: date) -> list[date]:
             if len(candidates) >= 2:
                 break
     return candidates
+
+
+def _get_auth_cookies(force_refresh: bool = False) -> dict[str, str] | None:
+    global _AUTH_COOKIES
+
+    if _AUTH_COOKIES is not None and not force_refresh:
+        return dict(_AUTH_COOKIES)
+
+    with _AUTH_LOCK:
+        if _AUTH_COOKIES is not None and not force_refresh:
+            return dict(_AUTH_COOKIES)
+
+        login_id = os.getenv("KRX_ID", "").strip()
+        login_pw = os.getenv("KRX_PW", "").strip()
+        if not login_id or not login_pw:
+            logger.warning("KRX_ID or KRX_PW is not configured")
+            return None
+
+        session = requests.Session()
+        try:
+            session.get(
+                KRX_LOGIN_PAGE,
+                headers={"User-Agent": USER_AGENT},
+                timeout=LOGIN_TIMEOUT_SECONDS,
+            ).raise_for_status()
+            session.get(
+                KRX_LOGIN_JSP,
+                headers={"User-Agent": USER_AGENT, "Referer": KRX_LOGIN_PAGE},
+                timeout=LOGIN_TIMEOUT_SECONDS,
+            ).raise_for_status()
+
+            payload = {
+                "mbrNm": "",
+                "telNo": "",
+                "di": "",
+                "certType": "",
+                "mbrId": login_id,
+                "pw": login_pw,
+            }
+            headers = {"User-Agent": USER_AGENT, "Referer": KRX_LOGIN_JSP}
+            response = session.post(
+                KRX_LOGIN_URL,
+                data=payload,
+                headers=headers,
+                timeout=LOGIN_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            result = response.json()
+            error_code = result.get("_error_code", "")
+
+            if error_code == "CD011":
+                payload["skipDup"] = "Y"
+                response = session.post(
+                    KRX_LOGIN_URL,
+                    data=payload,
+                    headers=headers,
+                    timeout=LOGIN_TIMEOUT_SECONDS,
+                )
+                response.raise_for_status()
+                result = response.json()
+                error_code = result.get("_error_code", "")
+
+            if error_code != "CD001":
+                logger.warning(
+                    "KRX login rejected: code=%s message=%s",
+                    error_code or "unknown",
+                    result.get("_error_message", ""),
+                )
+                return None
+
+            _AUTH_COOKIES = requests.utils.dict_from_cookiejar(session.cookies)
+            logger.info("KRX authenticated session established")
+            return dict(_AUTH_COOKIES)
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning("KRX login failed: %s", exc)
+            return None
+        finally:
+            session.close()
 
 
 def _fetch_for_date(
@@ -201,7 +292,7 @@ def _fetch_for_date(
             key = future_to_key[future]
             try:
                 fetched[key] = future.result()
-            except Exception as exc:  # defensive: one source must not stop the report
+            except Exception as exc:
                 logger.warning("KRX request task failed for %s: %s", key, exc)
                 fetched[key] = None
 
@@ -253,8 +344,13 @@ def _fetch_for_date(
 
 def _post_krx(
     bld: str,
+    _retried_after_auth: bool = False,
     **params,
 ) -> list[dict] | None:
+    cookies = _get_auth_cookies()
+    if cookies is None:
+        return None
+
     payload = {
         "bld": bld,
         "locale": "ko_KR",
@@ -263,25 +359,45 @@ def _post_krx(
         "csvxls_isNo": "false",
         **params,
     }
-    request = Request(
-        KRX_JSON_URL,
-        data=urlencode(payload).encode("utf-8"),
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
-            ),
-            "Referer": KRX_REFERER,
-            "X-Requested-With": "XMLHttpRequest",
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        },
-        method="POST",
-    )
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Referer": KRX_REFERER,
+        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    }
+
     try:
-        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        response = requests.post(
+            KRX_JSON_URL,
+            data=payload,
+            headers=headers,
+            cookies=cookies,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+
+        if response.status_code in {400, 401, 403} and not _retried_after_auth:
+            logger.info("KRX session may be stale; refreshing authentication")
+            if _get_auth_cookies(force_refresh=True) is not None:
+                return _post_krx(bld, _retried_after_auth=True, **params)
+
+        response.raise_for_status()
+        result = response.json()
+    except (requests.RequestException, ValueError, json.JSONDecodeError) as exc:
         logger.warning("KRX request failed for %s: %s", bld, exc)
+        return None
+
+    error_code = str(result.get("_error_code", ""))
+    if error_code and error_code != "CD001":
+        if not _retried_after_auth and error_code in {"LOGOUT", "CD002", "CD003"}:
+            logger.info("KRX response requires reauthentication: %s", error_code)
+            if _get_auth_cookies(force_refresh=True) is not None:
+                return _post_krx(bld, _retried_after_auth=True, **params)
+        logger.warning(
+            "KRX response error for %s: code=%s message=%s",
+            bld,
+            error_code,
+            result.get("_error_message", ""),
+        )
         return None
 
     for key in ("OutBlock_1", "output", "result"):
