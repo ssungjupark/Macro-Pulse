@@ -100,6 +100,7 @@ def fetch_all_data(mode: str | None = None) -> ReportDataset:
             domestic_state = unavailable_krx_market_state("KRX 시세 처리 실패")
         results["domestic_flow"].extend(domestic_state.get("domestic_flow", []))
         results["market_breadth"].extend(domestic_state.get("market_breadth", []))
+        results["sector_flow"].extend(domestic_state.get("sector_flow", []))
         results["sector_performance"].extend(
             domestic_state.get("sector_performance", [])
         )
@@ -108,6 +109,7 @@ def fetch_all_data(mode: str | None = None) -> ReportDataset:
     results["domestic_state"] = [
         *results["domestic_flow"],
         *results["market_breadth"],
+        *results["sector_flow"],
         *results["sector_performance"],
     ]
     results["macro_context"] = [
@@ -136,6 +138,7 @@ def _empty_report_dataset() -> ReportDataset:
         "macro": [],
         "domestic_flow": [],
         "market_breadth": [],
+        "sector_flow": [],
         "sector_performance": [],
         "domestic_state": [],
         "macro_context": [],
