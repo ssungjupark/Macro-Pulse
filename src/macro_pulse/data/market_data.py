@@ -18,7 +18,7 @@ from .providers.cnbc import (
     fetch_cnbc_data,
 )
 from .providers.fred import fetch_treasury_histories
-from .providers.kis import fetch_kis_market_state, unavailable_kis_market_state
+from .providers.krx import fetch_krx_market_state, unavailable_krx_market_state
 from .quality import (
     calculate_period_change,
     calculate_return_z_score,
@@ -92,19 +92,19 @@ def fetch_all_data(mode: str | None = None) -> ReportDataset:
     _append_us_yield_spread(results["treasuries"])
 
     if (mode or "").upper() != "US":
-        logger.info("Fetching KIS official market state...")
+        logger.info("Fetching KRX public market state...")
         try:
-            domestic_state = fetch_kis_market_state()
+            domestic_state = fetch_krx_market_state()
         except Exception as exc:
-            logger.exception("KIS provider failed without stopping the report: %s", exc)
-            domestic_state = unavailable_kis_market_state("한투 시세 처리 실패")
+            logger.exception("KRX provider failed without stopping the report: %s", exc)
+            domestic_state = unavailable_krx_market_state("KRX 시세 처리 실패")
         results["domestic_flow"].extend(domestic_state.get("domestic_flow", []))
         results["market_breadth"].extend(domestic_state.get("market_breadth", []))
         results["sector_performance"].extend(
             domestic_state.get("sector_performance", [])
         )
     else:
-        logger.info("Skipping KIS domestic market state for US report")
+        logger.info("Skipping KRX domestic market state for US report")
     results["domestic_state"] = [
         *results["domestic_flow"],
         *results["market_breadth"],
