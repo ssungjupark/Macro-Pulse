@@ -1,7 +1,7 @@
 {
   "modes": {
     "KR": {
-      "description": "Korean market close summary focused on domestic indices, Asia peers, local bond context, and FX.",
+      "description": "Korean market close summary focused on domestic indices, Asia peers, local bond context, FX, and investor flow trends.",
       "workflow_schedule": {
         "cron": "40 06 * * 1-5",
         "local_time": "15:40 KST",
@@ -77,29 +77,24 @@
           "items": ["DXY", "USD/KRW", "JPY/KRW", "WTI"]
         },
         {
-          "title": "수급 및 시장 체력",
-          "category": "domestic_state",
+          "title": "수급",
+          "category": "domestic_flow",
           "items": [
-            "국내 수급 및 시장 체력",
             "외국인 KOSPI 현물",
             "기관 KOSPI 현물",
-            "개인 KOSPI 현물",
-            "연기금 KOSPI 현물",
             "외국인 KOSDAQ 현물",
-            "기관 KOSDAQ 현물",
-            "개인 KOSDAQ 현물",
-            "연기금 KOSDAQ 현물",
-            "프로그램 차익",
-            "프로그램 비차익",
-            "KOSPI 상승 종목",
-            "KOSPI 하락 종목",
-            "KOSPI 거래대금",
-            "KOSDAQ 상승 종목",
-            "KOSDAQ 하락 종목",
-            "KOSDAQ 거래대금",
-            "업종 수익률",
-            "업종 상위*",
-            "업종 하위*"
+            "기관 KOSDAQ 현물"
+          ]
+        },
+        {
+          "title": "업종별 수급",
+          "category": "sector_flow",
+          "items": [
+            "업종별 수급",
+            "외국인 순매수*",
+            "외국인 순매도*",
+            "기관 순매수*",
+            "기관 순매도*"
           ]
         }
       ],
