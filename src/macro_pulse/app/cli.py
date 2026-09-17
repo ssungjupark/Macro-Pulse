@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -15,6 +15,10 @@ from ..core.artifacts import cleanup_files
 from ..core.logging import configure_logging, get_logger
 from ..data.market_data import fetch_all_data
 from ..delivery.notifier import send_telegram_report
+from ..event_results import (
+    build_recent_event_result_section,
+    insert_event_result_section,
+)
 from ..events import get_upcoming_events, insert_event_section
 from ..intelligence import analyze_market
 from ..reporting.generator import (
@@ -72,6 +76,7 @@ def compose_telegram_report(
     signals: list[dict],
     analysis: str | None,
     events,
+    event_results: str = "",
 ) -> str:
     signal_lines = ["[주요 변동 신호]"]
     if signals:
@@ -87,6 +92,10 @@ def compose_telegram_report(
 
     normalized_analysis = analysis or (
         "[오늘의 핵심 이슈]\n검증 기준을 충족한 주요 뉴스를 수집하지 못했습니다."
+    )
+    normalized_analysis = insert_event_result_section(
+        normalized_analysis,
+        event_results,
     )
     normalized_analysis = insert_event_section(normalized_analysis, events)
     signal_section = "\n".join(signal_lines)
@@ -119,11 +128,20 @@ async def main(
     signals = select_representative_signals(detect_signals(data))
 
     analysis = analyze_market(signals, mode, data)
+    today = datetime.now(timezone.utc).date()
+    recent_start = today - timedelta(days=2)
+    recent_events = [
+        event
+        for event in get_upcoming_events(recent_start, limit=20)
+        if recent_start <= event.event_date <= today
+    ]
+    event_results = build_recent_event_result_section(recent_events)
     telegram_summary = compose_telegram_report(
         base_summary,
         signals,
         analysis,
         get_upcoming_events(),
+        event_results,
     )
 
     logger.info(
