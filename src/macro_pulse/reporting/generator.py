@@ -75,7 +75,7 @@ def generate_telegram_summary(data, mode="Global", format_config=None):
             return f"{item.name}: {price_str}%"
 
         if item.value_format == ValueFormat.KRW_100M:
-            return f"{item.name}: {price_str}억원"
+            return _format_flow_line(item)
 
         if item.value_format == ValueFormat.INTEGER:
             return f"{item.name}: {price_str}개"
@@ -128,6 +128,41 @@ def generate_telegram_summary(data, mode="Global", format_config=None):
             lines.append("")
 
     return "\n".join(lines)
+
+
+def _format_flow_line(item):
+    base = f"{item.name}: {item.price:+,.0f}억원"
+    if item.change_5d is not None:
+        base += f" | 5일 {item.change_5d:+,.0f}억원"
+    if item.change_20d is not None:
+        base += f" | 20일 {item.change_20d:+,.0f}억원"
+    if item.z_score_20d is not None:
+        z_label = ""
+        if item.z_score_20d >= 2:
+            z_label = " (이례적 순매수)"
+        elif item.z_score_20d <= -2:
+            z_label = " (이례적 순매도)"
+        base += f" | 20일 z {item.z_score_20d:+.1f}{z_label}"
+
+    streak = _flow_streak(item.history)
+    if streak:
+        base += f" | {streak}"
+    return base
+
+
+def _flow_streak(history):
+    if len(history) < 2 or history[-1] == 0:
+        return ""
+    positive = history[-1] > 0
+    count = 0
+    for value in reversed(history):
+        if value == 0 or (value > 0) != positive:
+            break
+        count += 1
+    if count < 2:
+        return ""
+    direction = "순매수" if positive else "순매도"
+    return f"{count}거래일 연속 {direction}"
 
 
 def _resolve_template_dir(template_dir):
