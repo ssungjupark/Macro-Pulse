@@ -149,16 +149,15 @@ class KisProviderTests(unittest.TestCase):
             "국내 수급 및 시장 체력",
         )
 
-    def test_compact_failure_renders_as_one_na_line(self):
+    def test_legacy_kis_failure_is_hidden_from_current_kr_layout(self):
         state = unavailable_kis_market_state("한투 시세 수집 실패")
         state["domestic_state"] = state["domestic_flow"]
 
         summary = generate_telegram_summary(state, "KR")
-        section = summary.split("[수급 및 시장 체력]\n", 1)[1]
-        section = section.split("\n\n", 1)[0]
 
-        self.assertEqual(section.count("N/A"), 1)
-        self.assertIn("국내 수급 및 시장 체력: N/A", section)
+        self.assertIn("[수급]", summary)
+        self.assertIn("[업종별 수급]", summary)
+        self.assertNotIn("국내 수급 및 시장 체력: N/A", summary)
 
     @patch("macro_pulse.data.providers.kis._request_json")
     def test_token_request_uses_client_credentials_without_account(self, mock_request):
