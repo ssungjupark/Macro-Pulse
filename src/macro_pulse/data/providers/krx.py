@@ -5,6 +5,7 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
+from statistics import mean, pstdev
 from zoneinfo import ZoneInfo
 
 import requests
@@ -31,12 +32,21 @@ USER_AGENT = (
 REQUEST_TIMEOUT_SECONDS = 8
 LOGIN_TIMEOUT_SECONDS = 15
 MAX_WORKERS = 3
+FLOW_LOOKBACK_CALENDAR_DAYS = 45
 
 _AUTH_LOCK = threading.Lock()
 _AUTH_COOKIES: dict[str, str] | None = None
 
 MARKET_NAMES = {"STK": "KOSPI", "KSQ": "KOSDAQ"}
-INDEX_MARKETS = {"02": "KOSPI", "03": "KOSDAQ"}
+FLOW_HISTORY_FIELDS = {
+    "기관": "TRDVAL1",
+    "개인": "TRDVAL3",
+    "외국인": "TRDVAL4",
+}
+SECTOR_INVESTORS = {
+    "외국인": "9000",
+    "기관": "7050",
+}
 INSTITUTION_NAMES = (
     "금융투자",
     "보험",
@@ -99,15 +109,13 @@ def won_to_100m(value: float | int | str | None) -> float | None:
 
 
 def fetch_krx_market_state(today: date | None = None) -> dict[str, list]:
-    """Fetch authenticated KRX cash-market flow and breadth data."""
+    """Fetch authenticated KRX flow, breadth and sector-flow data."""
     if _get_auth_cookies() is None:
         logger.warning("KRX login unavailable; skipping authenticated market data")
         return unavailable_krx_market_state("KRX 로그인 실패")
 
     target = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
-    candidates = _candidate_dates(target)
-
-    for trading_date in candidates:
+    for trading_date in _candidate_dates(target):
         state = _fetch_for_date(trading_date, expected_date=target)
         if state is not None:
             return state
@@ -120,15 +128,16 @@ def unavailable_krx_market_state(reason: str) -> dict[str, list]:
     return {
         "domestic_flow": _unavailable_flow_snapshots(reason),
         "market_breadth": _unavailable_breadth_snapshots(reason),
-        "sector_performance": [
+        "sector_flow": [
             build_snapshot(
-                "업종 수익률",
+                "업종별 수급",
                 None,
-                value_format=ValueFormat.PERCENT_2,
+                value_format=ValueFormat.KRW_100M,
                 source="KRX",
                 warning=reason,
             )
         ],
+        "sector_performance": [],
     }
 
 
@@ -236,8 +245,11 @@ def _fetch_for_date(
         and trading_date != expected_date
     )
     ymd = trading_date.strftime("%Y%m%d")
+    history_start = (trading_date - timedelta(days=FLOW_LOOKBACK_CALENDAR_DAYS)).strftime(
+        "%Y%m%d"
+    )
 
-    request_specs: dict[str, tuple[str, dict]] = {
+    base_specs: dict[str, tuple[str, dict]] = {
         "market_STK": (
             "dbms/MDC/STAT/standard/MDCSTAT01501",
             {"mktId": "STK", "trdDd": ymd},
@@ -246,47 +258,123 @@ def _fetch_for_date(
             "dbms/MDC/STAT/standard/MDCSTAT01501",
             {"mktId": "KSQ", "trdDd": ymd},
         ),
-        "investor_STK": (
-            "dbms/MDC/STAT/standard/MDCSTAT02201",
+        "history_STK": (
+            "dbms/MDC/STAT/standard/MDCSTAT02202",
             {
-                "strtDd": ymd,
+                "strtDd": history_start,
                 "endDd": ymd,
                 "mktId": "STK",
                 "etf": "",
                 "etn": "",
                 "elw": "",
+                "inqTpCd": "2",
+                "trdVolVal": "2",
+                "askBid": "3",
             },
         ),
-        "investor_KSQ": (
-            "dbms/MDC/STAT/standard/MDCSTAT02201",
+        "history_KSQ": (
+            "dbms/MDC/STAT/standard/MDCSTAT02202",
             {
-                "strtDd": ymd,
+                "strtDd": history_start,
                 "endDd": ymd,
                 "mktId": "KSQ",
                 "etf": "",
                 "etn": "",
                 "elw": "",
+                "inqTpCd": "2",
+                "trdVolVal": "2",
+                "askBid": "3",
             },
         ),
-        "program": (
-            "dbms/MDC/STAT/standard/MDCSTAT02601",
-            {"strtDd": ymd, "endDd": ymd, "mktId": "STK"},
+        "classification_STK": (
+            "dbms/MDC/STAT/standard/MDCSTAT03901",
+            {"mktId": "STK", "trdDd": ymd},
         ),
-        "sector_02": (
-            "dbms/MDC/STAT/standard/MDCSTAT00101",
-            {"trdDd": ymd, "idxIndMidclssCd": "02"},
-        ),
-        "sector_03": (
-            "dbms/MDC/STAT/standard/MDCSTAT00101",
-            {"trdDd": ymd, "idxIndMidclssCd": "03"},
+        "classification_KSQ": (
+            "dbms/MDC/STAT/standard/MDCSTAT03901",
+            {"mktId": "KSQ", "trdDd": ymd},
         ),
     }
+    fetched = _fetch_specs(base_specs)
 
+    if not any(fetched.values()):
+        return None
+
+    flow = []
+    breadth = []
+    for market_id, market_name in MARKET_NAMES.items():
+        market_rows = fetched.get(f"market_{market_id}") or []
+        history_rows = fetched.get(f"history_{market_id}") or []
+        breadth.extend(
+            _build_breadth(market_name, market_rows, as_of, fetched_at, stale)
+        )
+        flow.extend(
+            _build_flow_from_history(
+                market_name,
+                history_rows,
+                as_of,
+                fetched_at,
+                stale,
+            )
+        )
+
+    five_day_start = _five_day_start(
+        fetched.get("history_STK") or fetched.get("history_KSQ") or [],
+        trading_date,
+    )
+    sector_specs = {}
+    for investor_label, investor_code in SECTOR_INVESTORS.items():
+        sector_specs[f"sector_{investor_label}_1d"] = (
+            "dbms/MDC/STAT/standard/MDCSTAT02401",
+            {
+                "strtDd": ymd,
+                "endDd": ymd,
+                "mktId": "ALL",
+                "invstTpCd": investor_code,
+            },
+        )
+        sector_specs[f"sector_{investor_label}_5d"] = (
+            "dbms/MDC/STAT/standard/MDCSTAT02401",
+            {
+                "strtDd": five_day_start,
+                "endDd": ymd,
+                "mktId": "ALL",
+                "invstTpCd": investor_code,
+            },
+        )
+    sector_data = _fetch_specs(sector_specs)
+
+    classification_rows = [
+        *(fetched.get("classification_STK") or []),
+        *(fetched.get("classification_KSQ") or []),
+    ]
+    market_rows = [
+        *(fetched.get("market_STK") or []),
+        *(fetched.get("market_KSQ") or []),
+    ]
+    sector_flow = _build_sector_flow(
+        classification_rows,
+        market_rows,
+        sector_data,
+        as_of,
+        fetched_at,
+        stale,
+    )
+
+    return {
+        "domestic_flow": flow,
+        "market_breadth": breadth,
+        "sector_flow": sector_flow,
+        "sector_performance": [],
+    }
+
+
+def _fetch_specs(specs: dict[str, tuple[str, dict]]) -> dict[str, list[dict] | None]:
     fetched: dict[str, list[dict] | None] = {}
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_key = {
             executor.submit(_post_krx, bld, **params): key
-            for key, (bld, params) in request_specs.items()
+            for key, (bld, params) in specs.items()
         }
         for future in as_completed(future_to_key):
             key = future_to_key[future]
@@ -295,51 +383,7 @@ def _fetch_for_date(
             except Exception as exc:
                 logger.warning("KRX request task failed for %s: %s", key, exc)
                 fetched[key] = None
-
-    raw_rows = [rows for rows in fetched.values() if rows]
-    if not raw_rows:
-        return None
-
-    flow = []
-    breadth = []
-    sector_rows = []
-
-    for market_id, market_name in MARKET_NAMES.items():
-        market_rows = fetched.get(f"market_{market_id}") or []
-        investor_rows = fetched.get(f"investor_{market_id}") or []
-        breadth.extend(
-            _build_breadth(market_name, market_rows, as_of, fetched_at, stale)
-        )
-        flow.extend(
-            _build_investor_flow(market_name, investor_rows, as_of, fetched_at, stale)
-        )
-
-    program_rows = fetched.get("program") or []
-    flow.extend(_build_program_flow(program_rows, as_of, fetched_at, stale))
-
-    for index_market, market_name in INDEX_MARKETS.items():
-        rows = fetched.get(f"sector_{index_market}") or []
-        sector_rows.extend((market_name, row) for row in rows)
-
-    sectors = _build_sector_leaders(sector_rows, as_of, fetched_at, stale)
-    if not sectors:
-        sectors = [
-            build_snapshot(
-                "업종 수익률",
-                None,
-                value_format=ValueFormat.PERCENT_2,
-                as_of=as_of,
-                fetched_at=fetched_at,
-                source="KRX",
-                warning="KRX 업종 항목 누락",
-            )
-        ]
-
-    return {
-        "domestic_flow": flow,
-        "market_breadth": breadth,
-        "sector_performance": sectors,
-    }
+    return fetched
 
 
 def _post_krx(
@@ -407,15 +451,198 @@ def _post_krx(
     return []
 
 
-def _build_investor_flow(market, rows, as_of, fetched_at, stale=False):
+def _build_flow_from_history(market, rows, as_of, fetched_at, stale=False):
+    series_by_label = {
+        label: _flow_series(rows, field)
+        for label, field in FLOW_HISTORY_FIELDS.items()
+    }
+    snapshots = []
+    for label in ("외국인", "기관"):
+        values = series_by_label[label]
+        current = values[-1] if values else None
+        if stale:
+            current = None
+        snapshots.append(
+            build_snapshot(
+                f"{label} {market} 현물",
+                current,
+                value_format=ValueFormat.KRW_100M,
+                history=values[-20:],
+                change_5d=_flow_sum(values, 5),
+                change_20d=_flow_sum(values, 20),
+                z_score_20d=_flow_z_score(values),
+                as_of=as_of,
+                fetched_at=fetched_at,
+                source="KRX",
+                is_stale=stale,
+                warning=(
+                    f"오래된 KRX 데이터: {as_of}"
+                    if stale
+                    else None
+                    if current is not None
+                    else "KRX 수급 이력 누락"
+                ),
+            )
+        )
+    return snapshots
+
+
+def _flow_series(rows, field):
+    dated_values = []
+    for row in rows:
+        raw_date = str(row.get("TRD_DD", ""))
+        value = won_to_100m(row.get(field))
+        if not raw_date or value is None:
+            continue
+        try:
+            parsed_date = datetime.strptime(raw_date, "%Y/%m/%d").date()
+        except ValueError:
+            continue
+        dated_values.append((parsed_date, value))
+    dated_values.sort(key=lambda item: item[0])
+    return [value for _, value in dated_values]
+
+
+def _flow_sum(values, sessions):
+    if len(values) < sessions:
+        return None
+    return sum(values[-sessions:])
+
+
+def _flow_z_score(values):
+    if len(values) < 20:
+        return None
+    recent = [float(value) for value in values[-20:]]
+    baseline = recent[:-1]
+    sigma = pstdev(baseline)
+    if sigma == 0:
+        return 0.0 if recent[-1] == mean(baseline) else None
+    return (recent[-1] - mean(baseline)) / sigma
+
+
+def _five_day_start(history_rows, trading_date):
+    dates = []
+    for row in history_rows:
+        raw_date = str(row.get("TRD_DD", ""))
+        try:
+            dates.append(datetime.strptime(raw_date, "%Y/%m/%d").date())
+        except ValueError:
+            continue
+    dates = sorted(set(dates))
+    if len(dates) >= 5:
+        return dates[-5].strftime("%Y%m%d")
+    return (trading_date - timedelta(days=7)).strftime("%Y%m%d")
+
+
+def _build_sector_flow(
+    classification_rows,
+    market_rows,
+    sector_data,
+    as_of,
+    fetched_at,
+    stale=False,
+):
+    ticker_to_sector = {}
+    for row in classification_rows:
+        ticker = str(row.get("ISU_SRT_CD", "")).strip()
+        sector = str(row.get("IDX_IND_NM", "")).strip()
+        if ticker and sector and sector != "-":
+            ticker_to_sector[ticker] = sector
+
+    turnover_by_sector: dict[str, float] = {}
+    for row in market_rows:
+        ticker = str(row.get("ISU_SRT_CD", "")).strip()
+        sector = ticker_to_sector.get(ticker)
+        turnover = _number(row.get("ACC_TRDVAL"))
+        if sector and turnover is not None:
+            turnover_by_sector[sector] = turnover_by_sector.get(sector, 0.0) + turnover
+
+    snapshots = []
+    for investor_label in SECTOR_INVESTORS:
+        current_by_sector = _aggregate_sector_net_buy(
+            sector_data.get(f"sector_{investor_label}_1d") or [],
+            ticker_to_sector,
+        )
+        five_day_by_sector = _aggregate_sector_net_buy(
+            sector_data.get(f"sector_{investor_label}_5d") or [],
+            ticker_to_sector,
+        )
+        ranked = sorted(current_by_sector.items(), key=lambda item: item[1], reverse=True)
+        buys = [(sector, value) for sector, value in ranked if value > 0][:3]
+        sells = [(sector, value) for sector, value in reversed(ranked) if value < 0][:3]
+
+        for direction, selected in (("순매수", buys), ("순매도", sells)):
+            for rank, (sector, value_won) in enumerate(selected, 1):
+                turnover = turnover_by_sector.get(sector, 0.0)
+                strength = (value_won / turnover) * 100 if turnover else None
+                strength_text = (
+                    f" | 강도 {strength:+.2f}%" if strength is not None else ""
+                )
+                current = won_to_100m(value_won)
+                five_day = won_to_100m(five_day_by_sector.get(sector))
+                if stale:
+                    current = None
+                snapshots.append(
+                    build_snapshot(
+                        f"{investor_label} {direction} {rank}: {sector}{strength_text}",
+                        current,
+                        value_format=ValueFormat.KRW_100M,
+                        change_5d=five_day,
+                        as_of=as_of,
+                        fetched_at=fetched_at,
+                        source="KRX",
+                        is_stale=stale,
+                        warning=(
+                            f"오래된 KRX 데이터: {as_of}"
+                            if stale
+                            else None
+                            if current is not None
+                            else "KRX 업종 수급 누락"
+                        ),
+                    )
+                )
+
+    if snapshots:
+        return snapshots
+    return [
+        build_snapshot(
+            "업종별 수급",
+            None,
+            value_format=ValueFormat.KRW_100M,
+            as_of=as_of,
+            fetched_at=fetched_at,
+            source="KRX",
+            warning="KRX 업종 수급 누락",
+        )
+    ]
+
+
+def _aggregate_sector_net_buy(rows, ticker_to_sector):
+    totals: dict[str, float] = {}
+    for row in rows:
+        ticker = str(row.get("ISU_SRT_CD", "")).strip()
+        sector = ticker_to_sector.get(ticker)
+        value = _number(row.get("NETBID_TRDVAL"))
+        if sector and value is not None:
+            totals[sector] = totals.get(sector, 0.0) + value
+    return totals
+
+
+def _build_investor_flow(
+    market,
+    rows,
+    as_of,
+    fetched_at,
+    stale=False,
+    history_rows=None,
+):
+    """Legacy current-day parser kept for tests and fallback tooling."""
     by_name = {
         str(row.get("INVST_TP_NM", "")).replace(" ", ""): row for row in rows
     }
-
     foreign_value = _row_value(by_name, ("외국인", "외국인합계"))
     individual_value = _row_value(by_name, ("개인",))
     pension_value = _row_value(by_name, ("연기금", "연기금등"))
-
     institution_value = _row_value(by_name, ("기관합계", "기관"))
     if institution_value is None:
         institution_parts = [
@@ -572,9 +799,7 @@ def _build_sector_leaders(rows, as_of, fetched_at, stale=False):
         rate = _number(row.get("FLUC_RT") or row.get("UPDN_RATE"))
         if rate is None:
             continue
-        label = (
-            index_name if market_name in index_name else f"{market_name} {index_name}"
-        )
+        label = index_name if market_name in index_name else f"{market_name} {index_name}"
         sectors[label] = rate
 
     ranked = sorted(sectors.items(), key=lambda item: item[1], reverse=True)
@@ -617,14 +842,8 @@ def _unavailable_flow_snapshots(reason="KRX 수집 실패"):
         for name in (
             "외국인 KOSPI 현물",
             "기관 KOSPI 현물",
-            "개인 KOSPI 현물",
-            "연기금 KOSPI 현물",
             "외국인 KOSDAQ 현물",
             "기관 KOSDAQ 현물",
-            "개인 KOSDAQ 현물",
-            "연기금 KOSDAQ 현물",
-            "프로그램 차익",
-            "프로그램 비차익",
         )
     ]
 
