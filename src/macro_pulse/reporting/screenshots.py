@@ -180,39 +180,77 @@ def position_element_for_capture(driver, element, top_offset=160):
 
 
 def dismiss_finviz_overlays(driver):
-    """Remove Finviz promotional dialogs/backdrops that can cover the heatmap."""
+    """Remove Finviz promotional dialogs and tutorial callouts before capture."""
     removed = driver.execute_script(
         """
         const map = document.getElementById('canvas-wrapper');
-        const phrases = [
+        const promoPhrases = [
             'Upgrade your Finviz Experience',
             'Learn more about Finviz Elite',
             'Finviz Elite'
         ];
+        const tutorialPhrases = [
+            'An interactive directory of the market',
+            'Pick a sector, drop into an industry',
+            'New: Why Is It Moving',
+            'Hover any tile for an AI summary of why it moved',
+            'Show Industry and Colorblind Mode live here too'
+        ];
+        const targetPhrases = [...promoPhrases, ...tutorialPhrases];
         let removedCount = 0;
 
-        // First remove a dialog ancestor identified by its promotional text.
-        for (const node of Array.from(document.querySelectorAll('body *'))) {
-            const text = (node.innerText || '').trim();
-            if (!text || !phrases.some((phrase) => text.includes(phrase))) {
-                continue;
-            }
-
+        function removeOverlayAncestor(node) {
             let current = node;
-            for (let depth = 0; depth < 10 && current && current !== document.body; depth++) {
+            for (let depth = 0; depth < 12 && current && current !== document.body; depth++) {
                 const style = window.getComputedStyle(current);
                 const rect = current.getBoundingClientRect();
-                const positioned = style.position === 'fixed' || style.position === 'absolute';
-                if (positioned && rect.width >= 250 && rect.height >= 120) {
+                const positioned =
+                    style.position === 'fixed' ||
+                    style.position === 'absolute' ||
+                    style.position === 'sticky';
+                const plausibleOverlay =
+                    positioned &&
+                    rect.width >= 180 &&
+                    rect.width <= window.innerWidth * 0.95 &&
+                    rect.height >= 60 &&
+                    rect.height <= window.innerHeight * 0.8;
+
+                if (plausibleOverlay) {
                     current.remove();
                     removedCount += 1;
-                    break;
+                    return true;
                 }
                 current = current.parentElement;
             }
+            return false;
         }
 
-        // Then remove any full-screen fixed backdrop that still sits above the map.
+        // Remove known Finviz promotional and onboarding/tutorial boxes by text.
+        for (const node of Array.from(document.querySelectorAll('body *'))) {
+            if (!node.isConnected) {
+                continue;
+            }
+            const text = (node.innerText || '').trim();
+            if (!text || !targetPhrases.some((phrase) => text.includes(phrase))) {
+                continue;
+            }
+            removeOverlayAncestor(node);
+        }
+
+        // Some onboarding cards use small X buttons. If one remains inside an
+        // overlay containing known tutorial wording, remove the whole card.
+        for (const node of Array.from(document.querySelectorAll('body *'))) {
+            if (!node.isConnected) {
+                continue;
+            }
+            const text = (node.innerText || '').trim();
+            if (!text || !tutorialPhrases.some((phrase) => text.includes(phrase))) {
+                continue;
+            }
+            removeOverlayAncestor(node);
+        }
+
+        // Remove any full-screen fixed backdrop still sitting above the map.
         for (const node of Array.from(document.querySelectorAll('body *'))) {
             if (!node.isConnected || node === map || (map && node.contains(map))) {
                 continue;
@@ -256,6 +294,10 @@ def take_finviz_screenshot(output_path=None):
 
         logger.info("Waiting for canvas to render...")
         time.sleep(5)
+        dismiss_finviz_overlays(driver)
+
+        # Finviz can inject onboarding tips a moment after the map first renders.
+        time.sleep(1)
         dismiss_finviz_overlays(driver)
 
         # Re-fetch the element after DOM cleanup in case Finviz re-rendered the map.
