@@ -143,6 +143,11 @@ async def main(
         mode,
         report_format_config,
     )
+    if mode == "KR":
+        base_summary = (
+            "[KRX 정규장 마감 | 15:30 기준]\n\n"
+            f"{base_summary}"
+        )
 
     signals = select_representative_signals(detect_signals(data))
 
@@ -190,24 +195,44 @@ async def main(
     if not telegram_token or not telegram_chat_id:
         raise RuntimeError("Telegram credentials missing; report was not delivered")
 
-    screenshot_paths = capture_screenshots(
-        get_screenshot_targets(
-            mode,
-            report_format_config,
-        )
+    delivery_receipt_path = os.environ.get("DELIVERY_RECEIPT_PATH")
+
+    # Send the text as soon as the report body is ready. Screenshots are optional
+    # follow-up media and must not delay the market-close message.
+    delivered = await send_telegram_report(
+        telegram_token,
+        telegram_chat_id,
+        telegram_summary,
+        delivery_receipt_path=delivery_receipt_path,
     )
+    if not delivered:
+        raise RuntimeError("Telegram report delivery failed")
 
+    screenshot_paths = []
     try:
-        delivered = await send_telegram_report(
-            telegram_token,
-            telegram_chat_id,
-            telegram_summary,
-            image_paths=screenshot_paths,
-            delivery_receipt_path=os.environ.get("DELIVERY_RECEIPT_PATH"),
+        screenshot_paths = capture_screenshots(
+            get_screenshot_targets(
+                mode,
+                report_format_config,
+            )
         )
-        if not delivered:
-            raise RuntimeError("Telegram report delivery failed")
-
+        if screenshot_paths:
+            photos_delivered = await send_telegram_report(
+                telegram_token,
+                telegram_chat_id,
+                image_paths=screenshot_paths,
+                attempts=1,
+                send_text=False,
+            )
+            if not photos_delivered:
+                logger.warning(
+                    "Telegram text was delivered, but one or more screenshots failed"
+                )
+    except Exception as exc:
+        logger.exception(
+            "Telegram text was delivered, but screenshot follow-up failed: %s",
+            exc,
+        )
     finally:
         cleanup_files(screenshot_paths)
 

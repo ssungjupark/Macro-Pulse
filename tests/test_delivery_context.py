@@ -37,13 +37,13 @@ class DeliveryContextTests(unittest.TestCase):
         timely = resolve_delivery_context(
             self.config,
             "schedule",
-            "30 07 * * 1-5",
-            now=datetime(2026, 9, 7, 8, tzinfo=timezone.utc),
+            "40 06 * * 1-5",
+            now=datetime(2026, 9, 7, 7, tzinfo=timezone.utc),
         )
         delayed = resolve_delivery_context(
             self.config,
             "schedule",
-            "00 08 * * 1-5",
+            "10 07 * * 1-5",
             now=datetime(2026, 9, 7, 21, tzinfo=timezone.utc),
         )
         self.assertEqual(timely, delayed)

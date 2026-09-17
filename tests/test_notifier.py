@@ -33,6 +33,27 @@ class NotifierTests(unittest.IsolatedAsyncioTestCase):
         bot.send_message.assert_awaited_once_with(chat_id="chat-id", text="hello")
         bot.send_photo.assert_awaited_once()
 
+    async def test_image_only_delivery_skips_text_message(self):
+        with (
+            patch("macro_pulse.delivery.notifier.Bot") as bot_cls,
+            patch("macro_pulse.delivery.notifier.os.path.exists", return_value=True),
+            patch("builtins.open", unittest.mock.mock_open(read_data=b"image")),
+        ):
+            bot = AsyncMock()
+            bot_cls.return_value = bot
+
+            result = await send_telegram_report(
+                "token",
+                "chat-id",
+                image_paths=["sample.png"],
+                attempts=1,
+                send_text=False,
+            )
+
+        self.assertTrue(result)
+        bot.send_message.assert_not_awaited()
+        bot.send_photo.assert_awaited_once()
+
     async def test_photo_failure_retains_text_delivery_receipt(self):
         with tempfile.TemporaryDirectory() as folder:
             receipt = Path(folder) / "sent"
