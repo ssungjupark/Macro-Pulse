@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from datetime import date
 
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
@@ -9,8 +10,6 @@ from macro_pulse.app.cli import compose_telegram_report
 from macro_pulse.config.report_formats import load_report_format_config
 from macro_pulse.events import EconomicEvent
 from macro_pulse.reporting.generator import generate_telegram_summary
-
-from datetime import date
 
 
 class OutputStructureTests(unittest.TestCase):
@@ -22,7 +21,8 @@ class OutputStructureTests(unittest.TestCase):
             "[변동성]",
             "[채권]",
             "[환율]",
-            "[수급 및 시장 체력]",
+            "[수급]",
+            "[업종별 수급]",
         ]
         positions = [summary.index(heading) for heading in headings]
         self.assertEqual(positions, sorted(positions))
@@ -48,7 +48,8 @@ class OutputStructureTests(unittest.TestCase):
             "[변동성]",
             "[채권]",
             "[환율]",
-            "[수급 및 시장 체력]",
+            "[수급]",
+            "[업종별 수급]",
             "[주요 변동 신호]",
             "[오늘의 핵심 이슈]",
             "[주요 일정]",
