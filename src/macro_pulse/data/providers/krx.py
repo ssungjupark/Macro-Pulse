@@ -40,69 +40,12 @@ _AUTH_COOKIES: dict[str, str] | None = None
 MARKET_NAMES = {"STK": "KOSPI", "KSQ": "KOSDAQ"}
 FLOW_HISTORY_FIELDS = {
     "기관": "TRDVAL1",
-    "개인": "TRDVAL3",
     "외국인": "TRDVAL4",
 }
 SECTOR_INVESTORS = {
     "외국인": "9000",
     "기관": "7050",
 }
-INSTITUTION_NAMES = (
-    "금융투자",
-    "보험",
-    "투신",
-    "사모",
-    "은행",
-    "기타금융",
-    "연기금",
-)
-SECTOR_KEYWORDS = (
-    "음식료",
-    "담배",
-    "섬유",
-    "의류",
-    "종이",
-    "목재",
-    "화학",
-    "제약",
-    "비금속",
-    "금속",
-    "기계",
-    "장비",
-    "전기",
-    "전자",
-    "의료",
-    "정밀",
-    "운송",
-    "자동차",
-    "유통",
-    "가스",
-    "건설",
-    "창고",
-    "통신",
-    "금융",
-    "증권",
-    "보험",
-    "서비스",
-    "제조",
-    "소프트웨어",
-    "하드웨어",
-    "반도체",
-    "방송",
-    "오락",
-    "문화",
-)
-SECTOR_EXCLUDE_KEYWORDS = (
-    "레버리지",
-    "인버스",
-    "커버드콜",
-    "선물",
-    "ETF",
-    "ETN",
-    "F-",
-)
-
-
 def won_to_100m(value: float | int | str | None) -> float | None:
     parsed = _number(value)
     return parsed / 100_000_000 if parsed is not None else None
@@ -628,72 +571,6 @@ def _aggregate_sector_net_buy(rows, ticker_to_sector):
     return totals
 
 
-def _build_investor_flow(
-    market,
-    rows,
-    as_of,
-    fetched_at,
-    stale=False,
-    history_rows=None,
-):
-    """Legacy current-day parser kept for tests and fallback tooling."""
-    by_name = {
-        str(row.get("INVST_TP_NM", "")).replace(" ", ""): row for row in rows
-    }
-    foreign_value = _row_value(by_name, ("외국인", "외국인합계"))
-    individual_value = _row_value(by_name, ("개인",))
-    pension_value = _row_value(by_name, ("연기금", "연기금등"))
-    institution_value = _row_value(by_name, ("기관합계", "기관"))
-    if institution_value is None:
-        institution_parts = [
-            _row_value(by_name, (name,)) for name in INSTITUTION_NAMES
-        ]
-        available_parts = [value for value in institution_parts if value is not None]
-        if available_parts:
-            institution_value = sum(available_parts)
-
-    values = (
-        ("외국인", foreign_value),
-        ("기관", institution_value),
-        ("개인", individual_value),
-        ("연기금", pension_value),
-    )
-    snapshots = []
-    for label, value in values:
-        if stale:
-            value = None
-        snapshots.append(
-            build_snapshot(
-                f"{label} {market} 현물",
-                value,
-                value_format=ValueFormat.KRW_100M,
-                as_of=as_of,
-                fetched_at=fetched_at,
-                source="KRX",
-                is_stale=stale,
-                warning=(
-                    f"오래된 KRX 데이터: {as_of}"
-                    if stale
-                    else None
-                    if value is not None
-                    else "KRX 항목 누락"
-                ),
-            )
-        )
-    return snapshots
-
-
-def _row_value(by_name: dict, aliases: tuple[str, ...]) -> float | None:
-    for alias in aliases:
-        row = by_name.get(alias.replace(" ", ""))
-        if not row:
-            continue
-        value = won_to_100m(row.get("NETBID_TRDVAL"))
-        if value is not None:
-            return value
-    return None
-
-
 def _build_breadth(market, rows, as_of, fetched_at, stale=False):
     changes = [_number(row.get("CMPPREVDD_PRC")) for row in rows]
     advances = sum(change > 0 for change in changes if change is not None)
@@ -752,82 +629,6 @@ def _build_breadth(market, rows, as_of, fetched_at, stale=False):
             warning=f"오래된 KRX 데이터: {as_of}" if stale else None,
         ),
     ]
-
-
-def _build_program_flow(rows, as_of, fetched_at, stale=False):
-    by_name = {
-        str(row.get("ITM_TP_NM", "")).replace(" ", ""): row for row in rows
-    }
-    snapshots = []
-    for item_name in ("차익", "비차익"):
-        row = by_name.get(item_name)
-        value = won_to_100m(row.get("NETBID_TRDVAL")) if row else None
-        if stale:
-            value = None
-        snapshots.append(
-            build_snapshot(
-                f"프로그램 {item_name}",
-                value,
-                value_format=ValueFormat.KRW_100M,
-                as_of=as_of,
-                fetched_at=fetched_at,
-                source="KRX",
-                is_stale=stale,
-                warning=(
-                    f"오래된 KRX 데이터: {as_of}"
-                    if stale
-                    else None
-                    if value is not None
-                    else "KRX 항목 누락"
-                ),
-            )
-        )
-    return snapshots
-
-
-def _build_sector_leaders(rows, as_of, fetched_at, stale=False):
-    sectors = {}
-    for market_name, row in rows:
-        index_name = str(row.get("IDX_NM", "")).strip()
-        normalized = index_name.replace(" ", "")
-        if not index_name or any(character.isdigit() for character in index_name):
-            continue
-        if any(keyword in index_name for keyword in SECTOR_EXCLUDE_KEYWORDS):
-            continue
-        if not any(keyword in normalized for keyword in SECTOR_KEYWORDS):
-            continue
-        rate = _number(row.get("FLUC_RT") or row.get("UPDN_RATE"))
-        if rate is None:
-            continue
-        label = index_name if market_name in index_name else f"{market_name} {index_name}"
-        sectors[label] = rate
-
-    ranked = sorted(sectors.items(), key=lambda item: item[1], reverse=True)
-    if not ranked:
-        return []
-    selected = [
-        *(("상위", rank, item) for rank, item in enumerate(ranked[:3], 1)),
-        *(("하위", rank, item) for rank, item in enumerate(reversed(ranked[-3:]), 1)),
-    ]
-    snapshots = []
-    seen = set()
-    for direction, rank, (label, rate) in selected:
-        if label in seen:
-            continue
-        seen.add(label)
-        snapshots.append(
-            build_snapshot(
-                f"업종 {direction} {rank}: {label}",
-                None if stale else rate,
-                value_format=ValueFormat.PERCENT_2,
-                as_of=as_of,
-                fetched_at=fetched_at,
-                source="KRX",
-                is_stale=stale,
-                warning=f"오래된 KRX 데이터: {as_of}" if stale else None,
-            )
-        )
-    return snapshots
 
 
 def _unavailable_flow_snapshots(reason="KRX 수집 실패"):

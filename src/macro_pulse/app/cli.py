@@ -136,8 +136,6 @@ async def main(
 
     data = fetch_all_data(mode)
 
-    html_report = generate_html_report(data)
-
     base_summary = generate_telegram_summary(
         data,
         mode,
@@ -176,17 +174,9 @@ async def main(
 
     output_path = Path("macro_pulse_report.html")
 
-    output_path.write_text(
-        html_report,
-        encoding="utf-8",
-    )
-
-    logger.info(
-        "Report saved to %s",
-        output_path,
-    )
-
     if args.dry_run:
+        output_path.write_text(generate_html_report(data), encoding="utf-8")
+        logger.info("Report saved to %s", output_path)
         logger.info("Dry run complete. No notifications sent.")
         return 0
 
@@ -207,6 +197,14 @@ async def main(
     )
     if not delivered:
         raise RuntimeError("Telegram report delivery failed")
+
+    # HTML is an auxiliary artifact. Do it only after the time-sensitive
+    # Telegram text has already been delivered.
+    try:
+        output_path.write_text(generate_html_report(data), encoding="utf-8")
+        logger.info("Report saved to %s", output_path)
+    except Exception as exc:
+        logger.warning("Optional HTML report generation failed: %s", exc)
 
     screenshot_paths = []
     try:

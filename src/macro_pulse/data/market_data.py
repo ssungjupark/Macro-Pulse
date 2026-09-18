@@ -67,7 +67,38 @@ YF_TICKERS = {
 YF_RATES_HISTORY = {
     "USD/KRW": "KRW=X",
     "JPY/KRW": "JPYKRW=X",
-    "EUR/KRW": "EURKRW=X",
+}
+
+MODE_YF_NAMES = {
+    "KR": {
+        "KOSPI",
+        "KOSDAQ",
+        "Nikkei 225",
+        "Hang Seng",
+        "Shanghai Composite",
+        "VIX",
+        "Gold",
+        "Silver",
+        "Copper",
+        "WTI",
+        "DXY",
+    },
+    "US": {
+        "S&P 500",
+        "Nasdaq",
+        "Euro Stoxx 50",
+        "SOX",
+        "Russell 2000",
+        "VIX",
+        "MOVE",
+        "Gold",
+        "Silver",
+        "Copper",
+        "WTI",
+        "Bitcoin",
+        "Ethereum",
+        "DXY",
+    },
 }
 
 
@@ -88,7 +119,7 @@ def fetch_all_data(mode: str | None = None) -> ReportDataset:
     _append_cnbc_market_snapshots(results, cnbc_data, treasury_histories)
 
     logger.info("Fetching Yahoo Finance data...")
-    _append_yahoo_snapshots(results)
+    _append_yahoo_snapshots(results, mode)
     _append_us_yield_spread(results["treasuries"])
 
     if (mode or "").upper() != "US":
@@ -250,9 +281,12 @@ def _append_cnbc_market_snapshots(
         )
 
 
-def _append_yahoo_snapshots(results: ReportDataset) -> None:
+def _append_yahoo_snapshots(results: ReportDataset, mode: str | None = None) -> None:
+    selected_names = MODE_YF_NAMES.get((mode or "").upper())
     for category, definitions in YF_TICKERS.items():
         for definition in definitions:
+            if selected_names is not None and definition.name not in selected_names:
+                continue
             try:
                 data = yf.Ticker(definition.symbol).history(period="3mo")
                 if data.empty:

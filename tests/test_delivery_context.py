@@ -53,7 +53,7 @@ class DeliveryContextTests(unittest.TestCase):
         context = resolve_delivery_context(
             self.config,
             "schedule",
-            "45 21 * * 1-5",
+            "00 22 * * 1-5",
             now=datetime(2026, 9, 5, 10, tzinfo=timezone.utc),
         )
         self.assertEqual(context["market"], "US")

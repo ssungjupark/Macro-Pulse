@@ -37,16 +37,7 @@ class ReportFormatConfigTests(unittest.TestCase):
         self.assertEqual(kr_schedule.weekdays, "Mon-Fri")
         self.assertEqual(
             [backup.local_time for backup in kr_schedule.backups],
-            [
-                "15:45 KST",
-                "15:50 KST",
-                "15:55 KST",
-                "16:00 KST",
-                "16:05 KST",
-                "16:10 KST",
-                "16:15 KST",
-                "16:20 KST",
-            ],
+            ["16:10 KST"],
         )
 
         self.assertEqual(us_schedule.cron, "30 21 * * 1-5")
@@ -54,7 +45,7 @@ class ReportFormatConfigTests(unittest.TestCase):
         self.assertEqual(us_schedule.weekdays, "Tue-Sat KST")
         self.assertEqual(
             [backup.local_time for backup in us_schedule.backups],
-            ["06:45 KST", "07:00 KST"],
+            ["07:00 KST"],
         )
 
     def test_generate_telegram_summary_uses_external_config_order(self):
@@ -156,26 +147,10 @@ class ReportFormatConfigTests(unittest.TestCase):
                     "    # BEGIN GENERATED SCHEDULES",
                     "    # KR primary | 15:40 KST | 06:40 UTC | Mon-Fri",
                     "    - cron: '40 06 * * 1-5'",
-                    "    # KR backup | 15:45 KST | 06:45 UTC | Mon-Fri",
-                    "    - cron: '45 06 * * 1-5'",
-                    "    # KR backup | 15:50 KST | 06:50 UTC | Mon-Fri",
-                    "    - cron: '50 06 * * 1-5'",
-                    "    # KR backup | 15:55 KST | 06:55 UTC | Mon-Fri",
-                    "    - cron: '55 06 * * 1-5'",
-                    "    # KR backup | 16:00 KST | 07:00 UTC | Mon-Fri",
-                    "    - cron: '00 07 * * 1-5'",
-                    "    # KR backup | 16:05 KST | 07:05 UTC | Mon-Fri",
-                    "    - cron: '05 07 * * 1-5'",
                     "    # KR backup | 16:10 KST | 07:10 UTC | Mon-Fri",
                     "    - cron: '10 07 * * 1-5'",
-                    "    # KR backup | 16:15 KST | 07:15 UTC | Mon-Fri",
-                    "    - cron: '15 07 * * 1-5'",
-                    "    # KR backup | 16:20 KST | 07:20 UTC | Mon-Fri",
-                    "    - cron: '20 07 * * 1-5'",
                     "    # US primary | 06:30 KST | 21:30 UTC | Tue-Sat KST",
                     "    - cron: '30 21 * * 1-5'",
-                    "    # US backup | 06:45 KST | 21:45 UTC | Tue-Sat KST",
-                    "    - cron: '45 21 * * 1-5'",
                     "    # US backup | 07:00 KST | 22:00 UTC | Tue-Sat KST",
                     "    - cron: '00 22 * * 1-5'",
                     "    # END GENERATED SCHEDULES",

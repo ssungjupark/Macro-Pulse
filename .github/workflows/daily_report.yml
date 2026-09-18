@@ -5,26 +5,10 @@ on:
     # BEGIN GENERATED SCHEDULES
     # KR primary | 15:40 KST | 06:40 UTC | Mon-Fri
     - cron: '40 06 * * 1-5'
-    # KR backup | 15:45 KST | 06:45 UTC | Mon-Fri
-    - cron: '45 06 * * 1-5'
-    # KR backup | 15:50 KST | 06:50 UTC | Mon-Fri
-    - cron: '50 06 * * 1-5'
-    # KR backup | 15:55 KST | 06:55 UTC | Mon-Fri
-    - cron: '55 06 * * 1-5'
-    # KR backup | 16:00 KST | 07:00 UTC | Mon-Fri
-    - cron: '00 07 * * 1-5'
-    # KR backup | 16:05 KST | 07:05 UTC | Mon-Fri
-    - cron: '05 07 * * 1-5'
     # KR backup | 16:10 KST | 07:10 UTC | Mon-Fri
     - cron: '10 07 * * 1-5'
-    # KR backup | 16:15 KST | 07:15 UTC | Mon-Fri
-    - cron: '15 07 * * 1-5'
-    # KR backup | 16:20 KST | 07:20 UTC | Mon-Fri
-    - cron: '20 07 * * 1-5'
     # US primary | 06:30 KST | 21:30 UTC | Tue-Sat KST
     - cron: '30 21 * * 1-5'
-    # US backup | 06:45 KST | 21:45 UTC | Tue-Sat KST
-    - cron: '45 21 * * 1-5'
     # US backup | 07:00 KST | 22:00 UTC | Tue-Sat KST
     - cron: '00 22 * * 1-5'
     # END GENERATED SCHEDULES
@@ -40,15 +24,13 @@ on:
           - KR
           - US
       delivery_guard:
-        description: 'Treat this dispatch as a scheduled delivery and suppress duplicates'
+        description: 'Suppress duplicate delivery for this market/date'
         required: false
         default: false
         type: boolean
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: macro-pulse-daily-report
@@ -57,9 +39,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    outputs:
-      report_created: ${{ steps.complete.outputs.report_created }}
+    timeout-minutes: 12
     env:
       REPORT_FORMAT_CONFIG: config/report_formats.json
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -69,7 +49,7 @@ jobs:
       KRX_PW: ${{ secrets.KRX_PW }}
 
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v5
 
     - name: Resolve report context
@@ -79,7 +59,7 @@ jobs:
         TRIGGER_CRON: ${{ github.event.schedule || '' }}
       run: PYTHONPATH=src python -m macro_pulse.workflows.delivery_context
 
-    - name: Check whether guarded report was already sent
+    - name: Restore delivery guard
       if: github.event_name == 'schedule' || github.event.inputs.delivery_guard == 'true'
       id: sent-cache
       uses: actions/cache/restore@v4
@@ -99,12 +79,11 @@ jobs:
       with:
         enable-cache: true
 
-    - name: Install runtime dependencies
+    - name: Install dependencies
       if: steps.sent-cache.outputs.cache-hit != 'true'
       run: uv sync --frozen --no-dev
 
-    - name: Run Macro Pulse Bot
-      id: bot
+    - name: Run Macro Pulse
       if: steps.sent-cache.outputs.cache-hit != 'true'
       env:
         REPORT_MARKET: ${{ steps.context.outputs.market }}
@@ -113,72 +92,30 @@ jobs:
         set -o pipefail
         uv run --frozen python src/main.py --market "$REPORT_MARKET" 2>&1 | tee macro-pulse.log
 
-    - name: Save guarded delivery receipt
+    - name: Save delivery guard
       if: always() && (github.event_name == 'schedule' || github.event.inputs.delivery_guard == 'true') && steps.sent-cache.outputs.cache-hit != 'true' && hashFiles('.macro-pulse-delivery/sent') != ''
       uses: actions/cache/save@v4
       with:
         path: .macro-pulse-delivery
         key: ${{ steps.context.outputs.cache_key }}
 
-    - name: Validate generated report
-      if: success() && steps.sent-cache.outputs.cache-hit != 'true'
-      run: test -s macro_pulse_report.html
-
-    - name: Prepare public directory
-      if: success() && steps.sent-cache.outputs.cache-hit != 'true'
-      run: |
-        mkdir -p public
-        mv macro_pulse_report.html public/index.html
-
-    - name: Configure GitHub Pages
-      if: success() && steps.sent-cache.outputs.cache-hit != 'true'
-      uses: actions/configure-pages@v5
-
-    - name: Upload GitHub Pages artifact
-      if: success() && steps.sent-cache.outputs.cache-hit != 'true'
-      uses: actions/upload-pages-artifact@v4
-      with:
-        path: ./public
-
-    - name: Upload workflow artifacts
+    - name: Upload run log
       if: always() && steps.sent-cache.outputs.cache-hit != 'true'
       uses: actions/upload-artifact@v6
       with:
         name: daily-report-artifacts
         path: |
-          macro_pulse_report.html
-          public/index.html
           macro-pulse.log
+          macro_pulse_report.html
         if-no-files-found: ignore
 
-    - name: Record report creation
-      id: complete
-      if: success() && steps.sent-cache.outputs.cache-hit != 'true'
-      run: echo "report_created=true" >> "$GITHUB_OUTPUT"
-
-  deploy:
-    if: ${{ needs.build.outputs.report_created == 'true' }}
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
-    - name: Deploy to GitHub Pages
-      id: deployment
-      uses: actions/deploy-pages@v4
-
   notify-failure:
-    if: ${{ always() && (needs.build.result == 'failure' || needs.deploy.result == 'failure') }}
-    needs:
-      - build
-      - deploy
+    if: ${{ always() && needs.build.result == 'failure' }}
+    needs: build
     runs-on: ubuntu-latest
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
     steps:
     - name: Send failure notification
       if: env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''

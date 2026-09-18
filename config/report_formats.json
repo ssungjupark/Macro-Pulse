@@ -9,44 +9,9 @@
         "weekdays": "Mon-Fri",
         "backups": [
           {
-            "cron": "45 06 * * 1-5",
-            "local_time": "15:45 KST",
-            "utc_time": "06:45 UTC"
-          },
-          {
-            "cron": "50 06 * * 1-5",
-            "local_time": "15:50 KST",
-            "utc_time": "06:50 UTC"
-          },
-          {
-            "cron": "55 06 * * 1-5",
-            "local_time": "15:55 KST",
-            "utc_time": "06:55 UTC"
-          },
-          {
-            "cron": "00 07 * * 1-5",
-            "local_time": "16:00 KST",
-            "utc_time": "07:00 UTC"
-          },
-          {
-            "cron": "05 07 * * 1-5",
-            "local_time": "16:05 KST",
-            "utc_time": "07:05 UTC"
-          },
-          {
             "cron": "10 07 * * 1-5",
             "local_time": "16:10 KST",
             "utc_time": "07:10 UTC"
-          },
-          {
-            "cron": "15 07 * * 1-5",
-            "local_time": "16:15 KST",
-            "utc_time": "07:15 UTC"
-          },
-          {
-            "cron": "20 07 * * 1-5",
-            "local_time": "16:20 KST",
-            "utc_time": "07:20 UTC"
           }
         ]
       },
@@ -54,27 +19,45 @@
         {
           "title": "국내 증시",
           "category": "indices_domestic",
-          "items": ["KOSPI", "KOSDAQ"]
+          "items": [
+            "KOSPI",
+            "KOSDAQ"
+          ]
         },
         {
           "title": "해외 증시",
           "category": "indices_overseas",
-          "items": ["Nikkei 225", "Hang Seng", "Shanghai Composite"]
+          "items": [
+            "Nikkei 225",
+            "Hang Seng",
+            "Shanghai Composite"
+          ]
         },
         {
           "title": "변동성",
           "category": "volatility",
-          "items": ["VKOSPI", "VIX"]
+          "items": [
+            "VKOSPI",
+            "VIX"
+          ]
         },
         {
           "title": "채권",
           "category": "treasuries",
-          "items": ["Japan 10Y Treasury", "Korea 10Y Treasury"]
+          "items": [
+            "Japan 10Y Treasury",
+            "Korea 10Y Treasury"
+          ]
         },
         {
           "title": "환율",
           "category": "macro_context",
-          "items": ["DXY", "USD/KRW", "JPY/KRW", "WTI"]
+          "items": [
+            "DXY",
+            "USD/KRW",
+            "JPY/KRW",
+            "WTI"
+          ]
         },
         {
           "title": "수급",
@@ -98,7 +81,10 @@
           ]
         }
       ],
-      "screenshot_targets": ["kospi", "kosdaq"]
+      "screenshot_targets": [
+        "kospi",
+        "kosdaq"
+      ]
     },
     "US": {
       "description": "US market close summary focused on US and European indices, commodities, crypto, and broad risk assets.",
@@ -108,11 +94,6 @@
         "utc_time": "21:30 UTC",
         "weekdays": "Tue-Sat KST",
         "backups": [
-          {
-            "cron": "45 21 * * 1-5",
-            "local_time": "06:45 KST",
-            "utc_time": "21:45 UTC"
-          },
           {
             "cron": "00 22 * * 1-5",
             "local_time": "07:00 KST",
@@ -124,35 +105,63 @@
         {
           "title": "해외 증시",
           "category": "indices_overseas",
-          "items": ["S&P 500", "Nasdaq", "Euro Stoxx 50", "SOX", "Russell 2000"]
+          "items": [
+            "S&P 500",
+            "Nasdaq",
+            "Euro Stoxx 50",
+            "SOX",
+            "Russell 2000"
+          ]
         },
         {
           "title": "변동성",
           "category": "volatility",
-          "items": ["VIX", "MOVE"]
+          "items": [
+            "VIX",
+            "MOVE"
+          ]
         },
         {
           "title": "미국 국채",
           "category": "treasuries",
-          "items": ["US 2Y Treasury", "US 10Y Treasury", "US 30Y Treasury", "US 10Y-2Y Spread"]
+          "items": [
+            "US 2Y Treasury",
+            "US 10Y Treasury",
+            "US 30Y Treasury",
+            "US 10Y-2Y Spread"
+          ]
         },
         {
           "title": "원자재",
           "category": "commodities",
-          "items": ["WTI", "Gold", "Silver", "Copper"]
+          "items": [
+            "WTI",
+            "Gold",
+            "Silver",
+            "Copper"
+          ]
         },
         {
           "title": "달러 및 환율",
           "category": "macro_context",
-          "items": ["DXY", "USD/KRW", "JPY/KRW"]
+          "items": [
+            "DXY",
+            "USD/KRW",
+            "JPY/KRW"
+          ]
         },
         {
           "title": "암호화폐",
           "category": "crypto",
-          "items": ["Bitcoin", "Ethereum"]
+          "items": [
+            "Bitcoin",
+            "Ethereum"
+          ]
         }
       ],
-      "screenshot_targets": ["finviz"]
+      "screenshot_targets": [
+        "finviz"
+      ]
     }
   }
 }
