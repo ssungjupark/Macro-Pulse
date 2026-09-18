@@ -39,6 +39,11 @@ on:
           - AUTO
           - KR
           - US
+      delivery_guard:
+        description: 'Treat this dispatch as a scheduled delivery and suppress duplicates'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -74,8 +79,8 @@ jobs:
         TRIGGER_CRON: ${{ github.event.schedule || '' }}
       run: PYTHONPATH=src python -m macro_pulse.workflows.delivery_context
 
-    - name: Check whether scheduled report was already sent
-      if: github.event_name == 'schedule'
+    - name: Check whether guarded report was already sent
+      if: github.event_name == 'schedule' || github.event.inputs.delivery_guard == 'true'
       id: sent-cache
       uses: actions/cache/restore@v4
       with:
@@ -103,13 +108,13 @@ jobs:
       if: steps.sent-cache.outputs.cache-hit != 'true'
       env:
         REPORT_MARKET: ${{ steps.context.outputs.market }}
-        DELIVERY_RECEIPT_PATH: ${{ github.event_name == 'schedule' && '.macro-pulse-delivery/sent' || '' }}
+        DELIVERY_RECEIPT_PATH: ${{ (github.event_name == 'schedule' || github.event.inputs.delivery_guard == 'true') && '.macro-pulse-delivery/sent' || '' }}
       run: |
         set -o pipefail
         uv run --frozen python src/main.py --market "$REPORT_MARKET" 2>&1 | tee macro-pulse.log
 
-    - name: Save scheduled delivery receipt
-      if: always() && github.event_name == 'schedule' && steps.sent-cache.outputs.cache-hit != 'true' && hashFiles('.macro-pulse-delivery/sent') != ''
+    - name: Save guarded delivery receipt
+      if: always() && (github.event_name == 'schedule' || github.event.inputs.delivery_guard == 'true') && steps.sent-cache.outputs.cache-hit != 'true' && hashFiles('.macro-pulse-delivery/sent') != ''
       uses: actions/cache/save@v4
       with:
         path: .macro-pulse-delivery
