@@ -138,6 +138,10 @@ EVENT_SPECS = (
 )
 
 
+def supports_event_result(title: str) -> bool:
+    return _event_spec(title) is not None
+
+
 def build_recent_event_result_section(
     events: list[EconomicEvent],
     *,

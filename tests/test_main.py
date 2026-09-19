@@ -2,7 +2,7 @@ import os
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, patch
 sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
 
 from macro_pulse.app import cli as app_main
+from macro_pulse.events import EconomicEvent
 from macro_pulse.domain.models import (
     AssetSnapshot,
     ModeFormatConfig,
@@ -29,6 +30,61 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(app_main.resolve_mode("global", now_utc=kr_time), "KR")
         self.assertEqual(app_main.resolve_mode(None, now_utc=us_time), "US")
+
+    def test_event_results_prefer_newest_release_over_older_fomc(self):
+        events = [
+            EconomicEvent(
+                date(2026, 9, 16),
+                "FOMC 금리 결정",
+                "Federal Reserve",
+                "https://www.federalreserve.gov/",
+                100,
+            ),
+            EconomicEvent(
+                date(2026, 9, 18),
+                "BOJ 통화정책 결정",
+                "Bank of Japan",
+                "https://www.boj.or.jp/",
+                90,
+            ),
+        ]
+
+        with (
+            patch(
+                "macro_pulse.app.cli.build_recent_event_result_section",
+                return_value="[발표 결과]\nBOJ 1.25%",
+            ) as generic,
+            patch(
+                "macro_pulse.app.cli.build_recent_fomc_result_section",
+                return_value="[발표 결과]\nFOMC",
+            ) as fomc,
+        ):
+            result = app_main.build_event_results(events)
+
+        self.assertIn("BOJ 1.25%", result)
+        self.assertNotIn("FOMC", result)
+        generic.assert_called_once()
+        fomc.assert_not_called()
+
+    def test_event_results_use_fomc_parser_when_fomc_is_newest(self):
+        events = [
+            EconomicEvent(
+                date(2026, 9, 16),
+                "FOMC 금리 결정",
+                "Federal Reserve",
+                "https://www.federalreserve.gov/",
+                100,
+            )
+        ]
+
+        with patch(
+            "macro_pulse.app.cli.build_recent_fomc_result_section",
+            return_value="[발표 결과]\nFOMC 3.75~4.00%",
+        ) as fomc:
+            result = app_main.build_event_results(events)
+
+        self.assertIn("FOMC 3.75~4.00%", result)
+        fomc.assert_called_once()
 
     async def test_main_dry_run_generates_report_without_notifications(self):
         data = {

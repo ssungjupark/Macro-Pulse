@@ -4,6 +4,7 @@ import argparse
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -18,6 +19,7 @@ from ..delivery.notifier import send_telegram_report
 from ..event_results import (
     build_recent_event_result_section,
     insert_event_result_section,
+    supports_event_result,
 )
 from ..events import get_upcoming_events, insert_event_section
 from ..fomc_results import build_recent_fomc_result_section
@@ -104,16 +106,34 @@ def compose_telegram_report(
 
 
 def build_event_results(events) -> str:
+    # Only report the newest supported release date. Older releases must never
+    # crowd out a newer BOJ/CPI/PCE/etc. result just because FOMC has a
+    # dedicated parser.
+    eligible = [
+        event
+        for event in events
+        if "FOMC" in event.title or supports_event_result(event.title)
+    ]
+    if not eligible:
+        return ""
+
+    latest_date = max(event.event_date for event in eligible)
     sections = []
 
-    fomc_section = build_recent_fomc_result_section(events)
-    if fomc_section:
-        sections.append(fomc_section.removeprefix("[발표 결과]\n"))
+    for event in sorted(
+        (item for item in eligible if item.event_date == latest_date),
+        key=lambda item: (-item.priority, item.title),
+    ):
+        if "FOMC" in event.title:
+            section = build_recent_fomc_result_section([event])
+        else:
+            section = build_recent_event_result_section([event], max_events=1)
 
-    non_fomc_events = [event for event in events if "FOMC" not in event.title]
-    generic_section = build_recent_event_result_section(non_fomc_events)
-    if generic_section:
-        sections.append(generic_section.removeprefix("[발표 결과]\n"))
+        if not section:
+            continue
+        sections.append(section.removeprefix("[발표 결과]\n"))
+        if len(sections) >= 2:
+            break
 
     if not sections:
         return ""
@@ -150,8 +170,8 @@ async def main(
     signals = select_representative_signals(detect_signals(data))
 
     analysis = analyze_market(signals, mode, data)
-    today = datetime.now(timezone.utc).date()
-    recent_start = today - timedelta(days=2)
+    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    recent_start = today - timedelta(days=1)
     recent_events = [
         event
         for event in get_upcoming_events(recent_start, limit=20)

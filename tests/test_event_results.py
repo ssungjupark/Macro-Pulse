@@ -10,11 +10,18 @@ from macro_pulse.event_results import (
     _format_result_block,
     _match_expectations,
     insert_event_result_section,
+    supports_event_result,
 )
 from macro_pulse.events import EconomicEvent
 
 
 class EventResultTests(unittest.TestCase):
+    def test_supported_result_types_include_boj_and_major_us_data(self):
+        self.assertTrue(supports_event_result("BOJ 통화정책 결정"))
+        self.assertTrue(supports_event_result("미국 CPI"))
+        self.assertTrue(supports_event_result("미국 PCE 물가"))
+        self.assertFalse(supports_event_result("미국 옵션 및 주가지수 선물 만기"))
+
     def test_insert_result_before_upcoming_events(self):
         analysis = (
             "[시장 해석]\n내용\n\n"
