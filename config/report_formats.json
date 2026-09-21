@@ -2,19 +2,6 @@
   "modes": {
     "KR": {
       "description": "Korean market close summary focused on domestic indices, Asia peers, local bond context, FX, and investor flow trends.",
-      "workflow_schedule": {
-        "cron": "40 06 * * 1-5",
-        "local_time": "15:40 KST",
-        "utc_time": "06:40 UTC",
-        "weekdays": "Mon-Fri",
-        "backups": [
-          {
-            "cron": "10 07 * * 1-5",
-            "local_time": "16:10 KST",
-            "utc_time": "07:10 UTC"
-          }
-        ]
-      },
       "summary_sections": [
         {
           "title": "국내 증시",
@@ -88,19 +75,6 @@
     },
     "US": {
       "description": "US market close summary focused on US and European indices, commodities, crypto, and broad risk assets.",
-      "workflow_schedule": {
-        "cron": "30 21 * * 1-5",
-        "local_time": "06:30 KST",
-        "utc_time": "21:30 UTC",
-        "weekdays": "Tue-Sat KST",
-        "backups": [
-          {
-            "cron": "00 22 * * 1-5",
-            "local_time": "07:00 KST",
-            "utc_time": "22:00 UTC"
-          }
-        ]
-      },
       "summary_sections": [
         {
           "title": "해외 증시",

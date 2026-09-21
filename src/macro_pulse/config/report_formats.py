@@ -43,7 +43,3 @@ def get_mode_format(mode, format_config=None):
 
 def get_screenshot_targets(mode, format_config=None):
     return list(get_mode_format(mode, format_config).screenshot_targets)
-
-
-def get_workflow_schedule(mode, format_config=None):
-    return get_mode_format(mode, format_config).workflow_schedule

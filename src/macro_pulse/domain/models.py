@@ -145,50 +145,10 @@ class SummarySectionConfig:
 
 
 @dataclass(slots=True, frozen=True)
-class WorkflowScheduleBackupConfig:
-    cron: str
-    local_time: str
-    utc_time: str
-
-    @classmethod
-    def from_mapping(
-        cls, raw_schedule: Mapping[str, Any]
-    ) -> "WorkflowScheduleBackupConfig":
-        return cls(
-            cron=str(raw_schedule["cron"]),
-            local_time=str(raw_schedule["local_time"]),
-            utc_time=str(raw_schedule["utc_time"]),
-        )
-
-
-@dataclass(slots=True, frozen=True)
-class WorkflowScheduleConfig:
-    cron: str
-    local_time: str
-    utc_time: str
-    weekdays: str
-    backups: list[WorkflowScheduleBackupConfig] = field(default_factory=list)
-
-    @classmethod
-    def from_mapping(cls, raw_schedule: Mapping[str, Any]) -> "WorkflowScheduleConfig":
-        return cls(
-            cron=str(raw_schedule["cron"]),
-            local_time=str(raw_schedule["local_time"]),
-            utc_time=str(raw_schedule["utc_time"]),
-            weekdays=str(raw_schedule["weekdays"]),
-            backups=[
-                WorkflowScheduleBackupConfig.from_mapping(backup)
-                for backup in raw_schedule.get("backups", [])
-            ],
-        )
-
-
-@dataclass(slots=True, frozen=True)
 class ModeFormatConfig:
     description: str = ""
     summary_sections: list[SummarySectionConfig] = field(default_factory=list)
     screenshot_targets: list[str] = field(default_factory=list)
-    workflow_schedule: WorkflowScheduleConfig | None = None
 
     @classmethod
     def from_mapping(cls, raw_mode: Mapping[str, Any]) -> "ModeFormatConfig":
@@ -201,11 +161,6 @@ class ModeFormatConfig:
             screenshot_targets=[
                 str(target) for target in raw_mode.get("screenshot_targets", [])
             ],
-            workflow_schedule=(
-                WorkflowScheduleConfig.from_mapping(raw_mode["workflow_schedule"])
-                if raw_mode.get("workflow_schedule")
-                else None
-            ),
         )
 
 

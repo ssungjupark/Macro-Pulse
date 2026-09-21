@@ -2,10 +2,6 @@
 
 # GitHub Secrets
 
-To run Macro Pulse Bot correctly through GitHub Actions, add the following repository secrets.
-
-The workflows run inside a runtime image built from `uv.lock`.
-
 Path:
 `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`
 
@@ -13,9 +9,18 @@ Path:
 
 ### Telegram
 
-- `TELEGRAM_BOT_TOKEN`: the token from BotFather for your Telegram bot
-- `TELEGRAM_CHAT_ID`: the chat or channel ID that should receive the report
+- `TELEGRAM_BOT_TOKEN`: BotFather token
+- `TELEGRAM_CHAT_ID`: destination chat or channel ID
 
-## Notes
+### Gemini
 
-- Secret names must match exactly.
+- `GEMINI_API_KEY`: used for news summaries and major-event result extraction
+
+### KRX
+
+Used only by the Korean close workflow.
+
+- `KRX_ID`: KRX information-data-system login ID
+- `KRX_PW`: KRX information-data-system login password
+
+Do not commit or paste secret values into source files or chat.

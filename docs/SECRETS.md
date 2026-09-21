@@ -2,28 +2,25 @@
 
 # GitHub Secrets
 
-GitHub Actions에서 Macro Pulse Bot을 정상적으로 실행하려면 저장소에 아래 Secret 값을 등록해야 합니다.
-
-워크플로는 `uv.lock`을 기준으로 빌드된 런타임 이미지를 사용합니다.
-
 경로:
 `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`
 
-## 필수 항목
+## 필수
 
 ### Telegram
 
-- `TELEGRAM_BOT_TOKEN`: BotFather로 만든 텔레그램 봇의 토큰
-- `TELEGRAM_CHAT_ID`: 리포트를 받을 채팅방 또는 채널의 ID
+- `TELEGRAM_BOT_TOKEN`: BotFather에서 만든 봇 토큰
+- `TELEGRAM_CHAT_ID`: 리포트를 받을 채팅방 또는 채널 ID
 
-### 한국투자 Open API
+### Gemini
 
-- `KIS_APP_KEY`: 한국투자 Open API 앱 키
-- `KIS_APP_SECRET`: 한국투자 Open API 앱 시크릿
+- `GEMINI_API_KEY`: 뉴스 요약 및 주요 이벤트 결과 정리에 사용
 
-국내 수급과 시장 체력 조회에 사용합니다. 계좌번호, 계좌 비밀번호와 주문 권한은
-등록하지 않습니다.
+### KRX
 
-## 주의 사항
+한국장 리포트에서만 사용합니다.
 
-- Secret 이름은 위와 정확히 같아야 합니다.
+- `KRX_ID`: KRX 정보데이터시스템 로그인 ID
+- `KRX_PW`: KRX 정보데이터시스템 로그인 비밀번호
+
+Secret 값은 코드나 채팅에 붙여넣지 마세요.

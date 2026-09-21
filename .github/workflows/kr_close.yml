@@ -1,0 +1,48 @@
+name: KR Close Report
+
+on:
+  schedule:
+    - cron: '40 06 * * 1-5' # 15:40 KST, Mon-Fri
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      KRX_ID: ${{ secrets.KRX_ID }}
+      KRX_PW: ${{ secrets.KRX_PW }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version-file: '.python-version'
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      with:
+        enable-cache: true
+
+    - name: Install dependencies
+      run: uv sync --frozen --no-dev
+
+    - name: Send KR close report
+      run: uv run --frozen python src/main.py --market KR
+
+    - name: Notify failure
+      if: failure() && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''
+      run: |
+        curl --silent --show-error --fail \
+          --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+          --data-urlencode "text=KR Close Report failed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+          "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"

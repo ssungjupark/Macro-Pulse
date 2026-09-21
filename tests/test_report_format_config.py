@@ -9,14 +9,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
 
 from macro_pulse.config.report_formats import (
     get_screenshot_targets,
-    get_workflow_schedule,
     load_report_format_config,
 )
 from macro_pulse.reporting.generator import generate_telegram_summary
-from macro_pulse.workflows.schedule_sync import (
-    render_daily_workflow_schedule_block,
-    workflow_matches_config,
-)
 
 
 class ReportFormatConfigTests(unittest.TestCase):
@@ -25,28 +20,6 @@ class ReportFormatConfigTests(unittest.TestCase):
 
         self.assertEqual(get_screenshot_targets("KR", config), ["kospi", "kosdaq"])
         self.assertEqual(get_screenshot_targets("US", config), ["finviz"])
-
-    def test_default_config_defines_expected_workflow_schedules(self):
-        config = load_report_format_config()
-
-        kr_schedule = get_workflow_schedule("KR", config)
-        us_schedule = get_workflow_schedule("US", config)
-
-        self.assertEqual(kr_schedule.cron, "40 06 * * 1-5")
-        self.assertEqual(kr_schedule.local_time, "15:40 KST")
-        self.assertEqual(kr_schedule.weekdays, "Mon-Fri")
-        self.assertEqual(
-            [backup.local_time for backup in kr_schedule.backups],
-            ["16:10 KST"],
-        )
-
-        self.assertEqual(us_schedule.cron, "30 21 * * 1-5")
-        self.assertEqual(us_schedule.local_time, "06:30 KST")
-        self.assertEqual(us_schedule.weekdays, "Tue-Sat KST")
-        self.assertEqual(
-            [backup.local_time for backup in us_schedule.backups],
-            ["07:00 KST"],
-        )
 
     def test_generate_telegram_summary_uses_external_config_order(self):
         custom_config = {
@@ -65,12 +38,6 @@ class ReportFormatConfigTests(unittest.TestCase):
                         },
                     ],
                     "screenshot_targets": ["finviz"],
-                    "workflow_schedule": {
-                        "cron": "30 21 * * 1-5",
-                        "local_time": "06:30 KST",
-                        "utc_time": "21:30 UTC",
-                        "weekdays": "Tue-Sat KST",
-                    },
                 }
             }
         }
@@ -107,12 +74,6 @@ class ReportFormatConfigTests(unittest.TestCase):
                 "KR": {
                     "summary_sections": [],
                     "screenshot_targets": ["kospi"],
-                    "workflow_schedule": {
-                        "cron": "00 08 * * 1-5",
-                        "local_time": "17:00 KST",
-                        "utc_time": "08:00 UTC",
-                        "weekdays": "Mon-Fri",
-                    },
                 }
             }
         }
@@ -128,42 +89,6 @@ class ReportFormatConfigTests(unittest.TestCase):
             self.assertEqual(get_screenshot_targets("KR", loaded_config), ["kospi"])
         finally:
             os.remove(config_path)
-
-    def test_daily_report_workflow_schedule_block_matches_config(self):
-        config = load_report_format_config()
-        workflow_path = os.path.join(
-            os.path.dirname(__file__), "../.github/workflows/daily_report.yml"
-        )
-
-        with open(workflow_path, "r", encoding="utf-8") as handle:
-            workflow_text = handle.read()
-
-        self.assertTrue(workflow_matches_config(workflow_text, config))
-        self.assertIn("# KR primary | 15:40 KST | 06:40 UTC | Mon-Fri", workflow_text)
-        self.assertEqual(
-            render_daily_workflow_schedule_block(config),
-            "\n".join(
-                [
-                    "    # BEGIN GENERATED SCHEDULES",
-                    "    # KR primary | 15:40 KST | 06:40 UTC | Mon-Fri",
-                    "    - cron: '40 06 * * 1-5'",
-                    "    # KR backup | 16:10 KST | 07:10 UTC | Mon-Fri",
-                    "    - cron: '10 07 * * 1-5'",
-                    "    # US primary | 06:30 KST | 21:30 UTC | Tue-Sat KST",
-                    "    - cron: '30 21 * * 1-5'",
-                    "    # US backup | 07:00 KST | 22:00 UTC | Tue-Sat KST",
-                    "    - cron: '00 22 * * 1-5'",
-                    "    # END GENERATED SCHEDULES",
-                ]
-            ),
-        )
-        self.assertIn("Report market mode", workflow_text)
-        self.assertIn("- AUTO", workflow_text)
-        self.assertIn("- KR", workflow_text)
-        self.assertIn("- US", workflow_text)
-        self.assertIn("actions/cache/restore@v4", workflow_text)
-        self.assertIn("actions/cache/save@v4", workflow_text)
-        self.assertIn("cancel-in-progress: false", workflow_text)
 
 
 if __name__ == "__main__":
