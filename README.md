@@ -59,12 +59,14 @@ Macro Pulse Bot은 시장 매크로 지표와 지수 히트맵을 종합한 보�
 
 ## GitHub Actions
 
-자동 실행은 시장별로 완전히 분리합니다.
+자동 실행은 `.github/workflows/daily_report.yml` 하나에서 관리합니다.
 
-- `.github/workflows/kr_close.yml`: 평일 15:40 KST에 한국장 리포트 실행
-- `.github/workflows/us_close.yml`: 화~토 06:30 KST에 미국장 리포트 실행
-- 각 workflow는 시장이 고정되어 있으며 AUTO 판별, 백업 cron, delivery cache를 사용하지 않습니다.
-- 각 workflow의 `Run workflow` 버튼으로 같은 실행을 수동 테스트할 수 있습니다.
+- 한국장: 평일 16:30 KST, 16:45 KST, 17:00 KST에 실행 시도
+- 미국장: 화~토 06:30 KST, 06:45 KST, 07:00 KST에 실행 시도
+- 같은 시장과 보고 날짜의 본문이 이미 전송됐으면 이후 백업 실행은 자동으로 건너뜁니다.
+- 예약 실행이 늦어져 자정을 넘어가도 원래 예약된 시장과 보고 날짜 기준으로 중복 여부를 판단합니다.
+- 수동 실행은 기본적으로 delivery guard를 사용하지 않아 테스트 발송이 가능합니다.
+- 정확한 시각이 중요한 경우 외부 스케줄러가 `workflow_dispatch`를 호출하고 GitHub cron은 백업으로 사용합니다. 설정 방법은 [`docs/external_scheduler.md`](docs/external_scheduler.md)에 정리되어 있습니다.
 - 실패하면 Telegram으로 workflow 링크를 알립니다.
 
 TELEGRAM Token등 KEY 설정은 [`docs/SECRETS.md`](docs/SECRETS.md)에서 볼 수 있습니다.

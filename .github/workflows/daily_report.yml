@@ -1,0 +1,122 @@
+name: Daily Macro Pulse Report
+
+on:
+  schedule:
+    # KR close: 16:30 primary, then 15/30 minute GitHub fallbacks
+    - cron: '30 07 * * 1-5'
+    - cron: '45 07 * * 1-5'
+    - cron: '00 08 * * 1-5'
+    # US close: 06:30 primary, then 15/30 minute GitHub fallbacks
+    - cron: '30 21 * * 1-5'
+    - cron: '45 21 * * 1-5'
+    - cron: '00 22 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      market:
+        description: 'Report market mode'
+        required: true
+        default: 'KR'
+        type: choice
+        options:
+          - KR
+          - US
+      delivery_guard:
+        description: 'Suppress duplicate delivery for this market/date'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macro-pulse-daily-report
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      KRX_ID: ${{ secrets.KRX_ID }}
+      KRX_PW: ${{ secrets.KRX_PW }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+
+    - name: Resolve report context
+      id: context
+      env:
+        MANUAL_MARKET: ${{ github.event.inputs.market || 'AUTO' }}
+        TRIGGER_CRON: ${{ github.event.schedule || '' }}
+      run: PYTHONPATH=src python -m macro_pulse.workflows.delivery_context
+
+    - name: Restore delivery guard
+      if: github.event_name == 'schedule' || github.event.inputs.delivery_guard == 'true'
+      id: sent-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: .macro-pulse-delivery
+        key: ${{ steps.context.outputs.cache_key }}
+
+    - name: Set up Python
+      if: steps.sent-cache.outputs.cache-hit != 'true'
+      uses: actions/setup-python@v7
+      with:
+        python-version-file: '.python-version'
+
+    - name: Set up uv
+      if: steps.sent-cache.outputs.cache-hit != 'true'
+      uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      with:
+        enable-cache: true
+
+    - name: Install dependencies
+      if: steps.sent-cache.outputs.cache-hit != 'true'
+      run: uv sync --frozen --no-dev
+
+    - name: Run Macro Pulse
+      if: steps.sent-cache.outputs.cache-hit != 'true'
+      env:
+        REPORT_MARKET: ${{ steps.context.outputs.market }}
+        DELIVERY_RECEIPT_PATH: ${{ (github.event_name == 'schedule' || github.event.inputs.delivery_guard == 'true') && '.macro-pulse-delivery/sent' || '' }}
+      run: |
+        set -o pipefail
+        uv run --frozen python src/main.py --market "$REPORT_MARKET" 2>&1 | tee macro-pulse.log
+
+    - name: Save delivery guard
+      if: always() && (github.event_name == 'schedule' || github.event.inputs.delivery_guard == 'true') && steps.sent-cache.outputs.cache-hit != 'true' && hashFiles('.macro-pulse-delivery/sent') != ''
+      uses: actions/cache/save@v4
+      with:
+        path: .macro-pulse-delivery
+        key: ${{ steps.context.outputs.cache_key }}
+
+    - name: Upload run log
+      if: always() && steps.sent-cache.outputs.cache-hit != 'true'
+      uses: actions/upload-artifact@v6
+      with:
+        name: daily-report-artifacts-${{ github.run_id }}
+        path: |
+          macro-pulse.log
+          macro_pulse_report.html
+        if-no-files-found: ignore
+
+  notify-failure:
+    if: ${{ always() && needs.build.result == 'failure' }}
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+    - name: Send failure notification
+      if: env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''
+      run: |
+        curl --silent --show-error --fail \
+          --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+          --data-urlencode "text=Macro Pulse workflow failed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+          "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
