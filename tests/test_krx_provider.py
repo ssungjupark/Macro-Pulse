@@ -8,6 +8,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
 from macro_pulse.data.providers.krx import (
     _aggregate_sector_net_buy,
     _build_breadth,
+    _extract_rows,
     _flow_sum,
     _flow_z_score,
     won_to_100m,
@@ -15,6 +16,11 @@ from macro_pulse.data.providers.krx import (
 
 
 class KrxProviderTests(unittest.TestCase):
+    def test_extract_rows_supports_all_known_krx_block_names(self):
+        sample = [{"ISU_SRT_CD": "005930"}]
+        for key in ("OutBlock_1", "output", "block1", "result"):
+            self.assertEqual(_extract_rows({key: sample}), sample)
+
     def test_won_to_100m_preserves_sign_and_unit(self):
         self.assertEqual(won_to_100m("-1,250,000,000,000"), -12500.0)
         self.assertEqual(won_to_100m("350,000,000"), 3.5)

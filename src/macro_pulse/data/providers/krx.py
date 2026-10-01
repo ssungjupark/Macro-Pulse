@@ -387,7 +387,22 @@ def _post_krx(
         )
         return None
 
-    for key in ("OutBlock_1", "output", "result"):
+    rows = _extract_rows(result)
+    if not rows and not any(
+        isinstance(result.get(key), list)
+        for key in ("OutBlock_1", "output", "block1", "result")
+    ):
+        logger.warning(
+            "KRX response for %s has no recognized row block; keys=%s",
+            bld,
+            sorted(result.keys()),
+        )
+    return rows
+
+
+def _extract_rows(result: dict) -> list[dict]:
+    """Return rows across the response block names used by KRX endpoints."""
+    for key in ("OutBlock_1", "output", "block1", "result"):
         rows = result.get(key)
         if isinstance(rows, list):
             return [row for row in rows if isinstance(row, dict)]

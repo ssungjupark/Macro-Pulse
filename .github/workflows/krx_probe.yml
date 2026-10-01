@@ -5,7 +5,7 @@ on:
 
 jobs:
   probe:
-    if: github.event.head_commit.message == 'Probe KRX sector endpoint'
+    if: github.event.head_commit.message == 'Fix KRX sector flow parsing'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -18,98 +18,25 @@ jobs:
         python-version-file: '.python-version'
     - name: Install requests
       run: python -m pip install requests
-    - name: Probe KRX response shapes
+    - name: Validate KRX sector flow end to end
       env:
         PYTHONPATH: src
       run: |
         python - <<'PY'
-        import json
-        import requests
+        from datetime import date
 
-        from macro_pulse.data.providers.krx import (
-            KRX_JSON_URL,
-            KRX_REFERER,
-            USER_AGENT,
-            _get_auth_cookies,
-        )
+        from macro_pulse.data.providers.krx import fetch_krx_market_state
 
-        cookies = _get_auth_cookies()
-        if cookies is None:
-            raise SystemExit("KRX auth failed")
+        state = fetch_krx_market_state(date(2026, 9, 30))
+        sector = state["sector_flow"]
+        valid = [item for item in sector if item.price is not None]
 
-        headers = {
-            "User-Agent": USER_AGENT,
-            "Referer": KRX_REFERER,
-            "X-Requested-With": "XMLHttpRequest",
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        }
+        print("domestic_flow_count:", len(state["domestic_flow"]))
+        print("sector_flow_count:", len(sector))
+        print("sector_flow_valid_count:", len(valid))
+        for item in valid[:12]:
+            print(item.name, item.price, item.change_5d)
 
-        def probe(label, bld, **params):
-            payload = {
-                "bld": bld,
-                "locale": "ko_KR",
-                "share": "1",
-                "money": "1",
-                "csvxls_isNo": "false",
-                **params,
-            }
-            r = requests.post(
-                KRX_JSON_URL,
-                data=payload,
-                headers=headers,
-                cookies=cookies,
-                timeout=15,
-            )
-            print(f"=== {label} status={r.status_code} ===")
-            data = r.json()
-            print("top-level keys:", sorted(data.keys()))
-            print("error:", data.get("_error_code"), data.get("_error_message"))
-            for key, value in data.items():
-                if isinstance(value, list):
-                    print(f"list {key}: {len(value)} rows")
-                    if value and isinstance(value[0], dict):
-                        print("row keys:", sorted(value[0].keys()))
-
-        ymd = "20260930"
-        probe(
-            "classification_STK",
-            "dbms/MDC/STAT/standard/MDCSTAT03901",
-            mktId="STK",
-            trdDd=ymd,
-        )
-        probe(
-            "classification_KSQ",
-            "dbms/MDC/STAT/standard/MDCSTAT03901",
-            mktId="KSQ",
-            trdDd=ymd,
-        )
-        probe(
-            "sector_foreign_STK_correct",
-            "dbms/MDC/STAT/standard/MDCSTAT02401",
-            trdDd=ymd,
-            mktId="STK",
-            invstTpCd="9000",
-        )
-        probe(
-            "sector_foreign_KSQ_correct",
-            "dbms/MDC/STAT/standard/MDCSTAT02401",
-            trdDd=ymd,
-            mktId="KSQ",
-            invstTpCd="9000",
-        )
-        probe(
-            "sector_institution_STK_correct",
-            "dbms/MDC/STAT/standard/MDCSTAT02401",
-            trdDd=ymd,
-            mktId="STK",
-            invstTpCd="7050",
-        )
-        probe(
-            "sector_current_wrong_shape",
-            "dbms/MDC/STAT/standard/MDCSTAT02401",
-            strtDd=ymd,
-            endDd=ymd,
-            mktId="ALL",
-            invstTpCd="9000",
-        )
+        if not valid:
+            raise SystemExit("sector flow is still empty")
         PY
