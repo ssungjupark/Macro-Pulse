@@ -1,10 +1,12 @@
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
 
+import macro_pulse.data.providers.krx as krx_provider
 from macro_pulse.data.providers.krx import (
     _aggregate_sector_net_buy,
     _build_breadth,
@@ -20,6 +22,25 @@ class KrxProviderTests(unittest.TestCase):
         sample = [{"ISU_SRT_CD": "005930"}]
         for key in ("OutBlock_1", "output", "block1", "result"):
             self.assertEqual(_extract_rows({key: sample}), sample)
+
+    def test_auth_retries_after_transient_failure(self):
+        krx_provider._AUTH_COOKIES = None
+        try:
+            with (
+                patch.object(
+                    krx_provider,
+                    "_login_once",
+                    side_effect=[None, {"SESSION": "ok"}],
+                ) as login_once,
+                patch.object(krx_provider, "sleep") as retry_sleep,
+            ):
+                cookies = krx_provider._get_auth_cookies()
+
+            self.assertEqual(cookies, {"SESSION": "ok"})
+            self.assertEqual(login_once.call_count, 2)
+            retry_sleep.assert_called_once_with(1)
+        finally:
+            krx_provider._AUTH_COOKIES = None
 
     def test_won_to_100m_preserves_sign_and_unit(self):
         self.assertEqual(won_to_100m("-1,250,000,000,000"), -12500.0)

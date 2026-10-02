@@ -6,6 +6,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from statistics import mean, pstdev
+from time import sleep
 from zoneinfo import ZoneInfo
 
 import requests
@@ -31,6 +32,8 @@ USER_AGENT = (
 )
 REQUEST_TIMEOUT_SECONDS = 8
 LOGIN_TIMEOUT_SECONDS = 15
+KRX_LOGIN_ATTEMPTS = 3
+KRX_LOGIN_RETRY_SECONDS = 1
 MAX_WORKERS = 3
 FLOW_LOOKBACK_CALENDAR_DAYS = 45
 
@@ -108,34 +111,69 @@ def _get_auth_cookies(force_refresh: bool = False) -> dict[str, str] | None:
         if _AUTH_COOKIES is not None and not force_refresh:
             return dict(_AUTH_COOKIES)
 
-        login_id = os.getenv("KRX_ID", "").strip()
-        login_pw = os.getenv("KRX_PW", "").strip()
-        if not login_id or not login_pw:
-            logger.warning("KRX_ID or KRX_PW is not configured")
+        for attempt in range(1, KRX_LOGIN_ATTEMPTS + 1):
+            cookies = _login_once()
+            if cookies is not None:
+                _AUTH_COOKIES = cookies
+                return dict(_AUTH_COOKIES)
+
+            if attempt < KRX_LOGIN_ATTEMPTS:
+                delay = KRX_LOGIN_RETRY_SECONDS * attempt
+                logger.warning(
+                    "KRX login attempt %s/%s failed; retrying in %ss",
+                    attempt,
+                    KRX_LOGIN_ATTEMPTS,
+                    delay,
+                )
+                sleep(delay)
+
+        logger.warning("KRX login failed after %s attempts", KRX_LOGIN_ATTEMPTS)
+        return None
+
+
+def _login_once() -> dict[str, str] | None:
+    login_id = os.getenv("KRX_ID", "").strip()
+    login_pw = os.getenv("KRX_PW", "").strip()
+    if not login_id or not login_pw:
+        logger.warning("KRX_ID or KRX_PW is not configured")
+        return None
+
+    session = requests.Session()
+    try:
+        session.get(
+            KRX_LOGIN_PAGE,
+            headers={"User-Agent": USER_AGENT},
+            timeout=LOGIN_TIMEOUT_SECONDS,
+        ).raise_for_status()
+        session.get(
+            KRX_LOGIN_JSP,
+            headers={"User-Agent": USER_AGENT, "Referer": KRX_LOGIN_PAGE},
+            timeout=LOGIN_TIMEOUT_SECONDS,
+        ).raise_for_status()
+
+        payload = {
+            "mbrNm": "",
+            "telNo": "",
+            "di": "",
+            "certType": "",
+            "mbrId": login_id,
+            "pw": login_pw,
+        }
+        headers = {"User-Agent": USER_AGENT, "Referer": KRX_LOGIN_JSP}
+        response = session.post(
+            KRX_LOGIN_URL,
+            data=payload,
+            headers=headers,
+            timeout=LOGIN_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        result = _parse_login_response(response)
+        if result is None:
             return None
+        error_code = result.get("_error_code", "")
 
-        session = requests.Session()
-        try:
-            session.get(
-                KRX_LOGIN_PAGE,
-                headers={"User-Agent": USER_AGENT},
-                timeout=LOGIN_TIMEOUT_SECONDS,
-            ).raise_for_status()
-            session.get(
-                KRX_LOGIN_JSP,
-                headers={"User-Agent": USER_AGENT, "Referer": KRX_LOGIN_PAGE},
-                timeout=LOGIN_TIMEOUT_SECONDS,
-            ).raise_for_status()
-
-            payload = {
-                "mbrNm": "",
-                "telNo": "",
-                "di": "",
-                "certType": "",
-                "mbrId": login_id,
-                "pw": login_pw,
-            }
-            headers = {"User-Agent": USER_AGENT, "Referer": KRX_LOGIN_JSP}
+        if error_code == "CD011":
+            payload["skipDup"] = "Y"
             response = session.post(
                 KRX_LOGIN_URL,
                 data=payload,
@@ -143,37 +181,45 @@ def _get_auth_cookies(force_refresh: bool = False) -> dict[str, str] | None:
                 timeout=LOGIN_TIMEOUT_SECONDS,
             )
             response.raise_for_status()
-            result = response.json()
+            result = _parse_login_response(response)
+            if result is None:
+                return None
             error_code = result.get("_error_code", "")
 
-            if error_code == "CD011":
-                payload["skipDup"] = "Y"
-                response = session.post(
-                    KRX_LOGIN_URL,
-                    data=payload,
-                    headers=headers,
-                    timeout=LOGIN_TIMEOUT_SECONDS,
-                )
-                response.raise_for_status()
-                result = response.json()
-                error_code = result.get("_error_code", "")
-
-            if error_code != "CD001":
-                logger.warning(
-                    "KRX login rejected: code=%s message=%s",
-                    error_code or "unknown",
-                    result.get("_error_message", ""),
-                )
-                return None
-
-            _AUTH_COOKIES = requests.utils.dict_from_cookiejar(session.cookies)
-            logger.info("KRX authenticated session established")
-            return dict(_AUTH_COOKIES)
-        except (requests.RequestException, ValueError) as exc:
-            logger.warning("KRX login failed: %s", exc)
+        if error_code != "CD001":
+            logger.warning(
+                "KRX login rejected: code=%s message=%s",
+                error_code or "unknown",
+                result.get("_error_message", ""),
+            )
             return None
-        finally:
-            session.close()
+
+        cookies = requests.utils.dict_from_cookiejar(session.cookies)
+        if not cookies:
+            logger.warning("KRX login succeeded but returned no session cookies")
+            return None
+
+        logger.info("KRX authenticated session established")
+        return cookies
+    except requests.RequestException as exc:
+        logger.warning("KRX login request failed: %s", exc)
+        return None
+    finally:
+        session.close()
+
+
+def _parse_login_response(response) -> dict | None:
+    try:
+        return response.json()
+    except ValueError as exc:
+        logger.warning(
+            "KRX login returned non-JSON response: status=%s content_type=%s bytes=%s (%s)",
+            response.status_code,
+            response.headers.get("Content-Type", ""),
+            len(response.content or b""),
+            exc,
+        )
+        return None
 
 
 def _fetch_for_date(
@@ -410,6 +456,10 @@ def _extract_rows(result: dict) -> list[dict]:
 
 
 def _build_flow_from_history(market, rows, as_of, fetched_at, stale=False):
+    actual_as_of = _latest_flow_date(rows)
+    date_mismatch = actual_as_of is not None and actual_as_of != as_of
+    effective_stale = stale or date_mismatch
+
     series_by_label = {
         label: _flow_series(rows, field)
         for label, field in FLOW_HISTORY_FIELDS.items()
@@ -418,8 +468,18 @@ def _build_flow_from_history(market, rows, as_of, fetched_at, stale=False):
     for label in ("외국인", "기관"):
         values = series_by_label[label]
         current = values[-1] if values else None
-        if stale:
+        if effective_stale:
             current = None
+
+        if date_mismatch:
+            warning = f"KRX 수급 기준일 불일치: {actual_as_of}"
+        elif stale:
+            warning = f"오래된 KRX 데이터: {actual_as_of or as_of}"
+        elif current is None:
+            warning = "KRX 수급 이력 누락"
+        else:
+            warning = None
+
         snapshots.append(
             build_snapshot(
                 f"{label} {market} 현물",
@@ -429,20 +489,25 @@ def _build_flow_from_history(market, rows, as_of, fetched_at, stale=False):
                 change_5d=_flow_sum(values, 5),
                 change_20d=_flow_sum(values, 20),
                 z_score_20d=_flow_z_score(values),
-                as_of=as_of,
+                as_of=actual_as_of or as_of,
                 fetched_at=fetched_at,
                 source="KRX",
-                is_stale=stale,
-                warning=(
-                    f"오래된 KRX 데이터: {as_of}"
-                    if stale
-                    else None
-                    if current is not None
-                    else "KRX 수급 이력 누락"
-                ),
+                is_stale=effective_stale,
+                warning=warning,
             )
         )
     return snapshots
+
+
+def _latest_flow_date(rows) -> str | None:
+    dates = []
+    for row in rows:
+        raw_date = str(row.get("TRD_DD", ""))
+        try:
+            dates.append(datetime.strptime(raw_date, "%Y/%m/%d").date())
+        except ValueError:
+            continue
+    return max(dates).isoformat() if dates else None
 
 
 def _flow_series(rows, field):

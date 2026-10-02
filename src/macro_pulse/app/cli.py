@@ -55,6 +55,42 @@ def resolve_mode(
     return "KR" if 7 <= current_time.hour < 20 else "US"
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def validate_krx_delivery_data(data) -> tuple[bool, str]:
+    required_flow_names = {
+        "외국인 KOSPI 현물",
+        "기관 KOSPI 현물",
+        "외국인 KOSDAQ 현물",
+        "기관 KOSDAQ 현물",
+    }
+    flow_items = data.get("domestic_flow", [])
+    flow_by_name = {item.name: item for item in flow_items}
+    missing_flow = sorted(
+        name
+        for name in required_flow_names
+        if name not in flow_by_name or flow_by_name[name].price is None
+    )
+
+    valid_sector_items = [
+        item
+        for item in data.get("sector_flow", [])
+        if item.price is not None and item.name != "업종별 수급"
+    ]
+
+    problems = []
+    if missing_flow:
+        problems.append("현물 수급 누락: " + ", ".join(missing_flow))
+    if len(valid_sector_items) < 12:
+        problems.append(
+            f"업종 수급 부족: {len(valid_sector_items)}/12"
+        )
+
+    return (not problems, "; ".join(problems))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Macro Pulse Bot")
 
@@ -155,6 +191,14 @@ async def main(
     )
 
     data = fetch_all_data(mode)
+
+    if mode == "KR" and _env_flag("REQUIRE_KRX_DATA"):
+        krx_ready, krx_problem = validate_krx_delivery_data(data)
+        if not krx_ready:
+            raise RuntimeError(
+                "KRX critical data unavailable; guarded delivery aborted: "
+                f"{krx_problem}"
+            )
 
     base_summary = generate_telegram_summary(
         data,

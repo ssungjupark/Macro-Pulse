@@ -31,6 +31,31 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(app_main.resolve_mode("global", now_utc=kr_time), "KR")
         self.assertEqual(app_main.resolve_mode(None, now_utc=us_time), "US")
 
+    def test_validate_krx_delivery_data_requires_complete_flow_and_sector_set(self):
+        data = {
+            "domestic_flow": [
+                AssetSnapshot(name="외국인 KOSPI 현물", price=1),
+                AssetSnapshot(name="기관 KOSPI 현물", price=1),
+                AssetSnapshot(name="외국인 KOSDAQ 현물", price=1),
+                AssetSnapshot(name="기관 KOSDAQ 현물", price=1),
+            ],
+            "sector_flow": [
+                AssetSnapshot(name=f"업종 수급 {index}", price=index)
+                for index in range(1, 13)
+            ],
+        }
+
+        ready, problem = app_main.validate_krx_delivery_data(data)
+        self.assertTrue(ready)
+        self.assertEqual(problem, "")
+
+        data["sector_flow"] = [
+            AssetSnapshot(name="업종별 수급", price=None, warning="KRX 로그인 실패")
+        ]
+        ready, problem = app_main.validate_krx_delivery_data(data)
+        self.assertFalse(ready)
+        self.assertIn("업종 수급 부족", problem)
+
     def test_event_results_prefer_newest_release_over_older_fomc(self):
         events = [
             EconomicEvent(
@@ -151,6 +176,32 @@ class MainTests(unittest.IsolatedAsyncioTestCase):
             html_report.assert_called_once_with(data)
             telegram_summary.assert_called_once_with(data, "US", config)
             telegram.assert_not_awaited()
+
+    async def test_guarded_kr_run_aborts_before_telegram_when_krx_is_missing(self):
+        config = ReportFormatConfig(
+            modes={
+                "KR": ModeFormatConfig(
+                    summary_sections=[],
+                    screenshot_targets=[],
+                )
+            }
+        )
+        with (
+            patch("macro_pulse.app.cli.fetch_all_data", return_value={}),
+            patch(
+                "macro_pulse.app.cli.load_report_format_config",
+                return_value=config,
+            ),
+            patch(
+                "macro_pulse.app.cli.send_telegram_report",
+                new_callable=AsyncMock,
+            ) as telegram,
+            patch.dict(os.environ, {"REQUIRE_KRX_DATA": "true"}),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "KRX critical data unavailable"):
+                await app_main.main(["--market", "KR"])
+
+        telegram.assert_not_awaited()
 
     async def test_main_fails_when_telegram_delivery_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir:
