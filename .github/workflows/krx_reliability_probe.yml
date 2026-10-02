@@ -24,14 +24,20 @@ jobs:
       run: |
         python - <<'PY'
         from datetime import date
-        from macro_pulse.app.cli import validate_krx_delivery_data
-        from macro_pulse.data.providers.krx import fetch_krx_market_state
+                from macro_pulse.data.providers.krx import fetch_krx_market_state
 
         state = fetch_krx_market_state(date(2026, 10, 1))
-        ready, problem = validate_krx_delivery_data(state)
-        print("flow:", [(x.name, x.price, x.as_of, x.warning) for x in state["domestic_flow"]])
-        print("sector_valid:", len([x for x in state["sector_flow"] if x.price is not None]))
-        print("ready:", ready, problem)
-        if not ready:
-            raise SystemExit(problem)
+        flow = state["domestic_flow"]
+        sector = state["sector_flow"]
+        valid_flow = [x for x in flow if x.price is not None]
+        valid_sector = [x for x in sector if x.price is not None and x.name != "업종별 수급"]
+
+        print("flow:", [(x.name, x.price, x.as_of, x.warning) for x in flow])
+        print("sector_valid:", len(valid_sector))
+        print("ready:", len(valid_flow) == 4 and len(valid_sector) >= 12)
+
+        if len(valid_flow) != 4:
+            raise SystemExit(f"domestic flow incomplete: {len(valid_flow)}/4")
+        if len(valid_sector) < 12:
+            raise SystemExit(f"sector flow incomplete: {len(valid_sector)}/12")
         PY
