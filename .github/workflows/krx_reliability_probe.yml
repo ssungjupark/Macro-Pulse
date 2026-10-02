@@ -24,7 +24,7 @@ jobs:
       run: |
         python - <<'PY'
         from datetime import date
-                from macro_pulse.data.providers.krx import fetch_krx_market_state
+        from macro_pulse.data.providers.krx import fetch_krx_market_state
 
         state = fetch_krx_market_state(date(2026, 10, 1))
         flow = state["domestic_flow"]
