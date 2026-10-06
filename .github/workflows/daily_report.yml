@@ -43,7 +43,6 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       KRX_ID: ${{ secrets.KRX_ID }}
       KRX_PW: ${{ secrets.KRX_PW }}
-      REQUIRE_KRX_DATA: ${{ github.event_name == 'schedule' || github.event.inputs.delivery_guard == 'true' }}
 
     steps:
     - name: Checkout
