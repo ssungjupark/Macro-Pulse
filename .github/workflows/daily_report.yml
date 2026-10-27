@@ -2,13 +2,13 @@ name: Daily Macro Pulse Report
 
 on:
   schedule:
-    # KR close: 16:30 primary, then 15/30 minute GitHub fallbacks
+    # KR close: 16:30 primary, then 16/30 minute GitHub fallbacks
     - cron: '30 07 * * 1-5'
-    - cron: '45 07 * * 1-5'
+    - cron: '46 07 * * 1-5'
     - cron: '00 08 * * 1-5'
-    # US close: 06:30 primary, then 15/30 minute GitHub fallbacks
+    # US close: 06:30 primary, then 16/30 minute GitHub fallbacks
     - cron: '30 21 * * 1-5'
-    - cron: '45 21 * * 1-5'
+    - cron: '46 21 * * 1-5'
     - cron: '00 22 * * 1-5'
   workflow_dispatch:
     inputs:
