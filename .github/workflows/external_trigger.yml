@@ -1,0 +1,105 @@
+name: External MarketBrief Trigger
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.marketbrief-trigger/kr.txt'
+      - '.marketbrief-trigger/us.txt'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macro-pulse-external-trigger
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      KRX_ID: ${{ secrets.KRX_ID }}
+      KRX_PW: ${{ secrets.KRX_PW }}
+      REQUIRE_KRX_DATA: 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Resolve market
+        id: context
+        shell: bash
+        run: |
+          CHANGED=$(git diff --name-only HEAD^ HEAD)
+          if echo "$CHANGED" | grep -qx '.marketbrief-trigger/kr.txt'; then
+            MARKET='KR'
+          elif echo "$CHANGED" | grep -qx '.marketbrief-trigger/us.txt'; then
+            MARKET='US'
+          else
+            echo 'No market trigger file changed.'
+            exit 1
+          fi
+
+          SESSION_DATE=$(TZ=Asia/Seoul date +%F)
+          CACHE_KEY="macro-pulse-external-sent-v1-${MARKET}-${SESSION_DATE}"
+
+          echo "market=$MARKET" >> "$GITHUB_OUTPUT"
+          echo "cache_key=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+          echo "Resolved market=$MARKET session=$SESSION_DATE"
+
+      - name: Restore delivery guard
+        id: sent-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .macro-pulse-external-delivery
+          key: ${{ steps.context.outputs.cache_key }}
+
+      - name: Set up Python
+        if: steps.sent-cache.outputs.cache-hit != 'true'
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: '.python-version'
+
+      - name: Set up uv
+        if: steps.sent-cache.outputs.cache-hit != 'true'
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        if: steps.sent-cache.outputs.cache-hit != 'true'
+        run: uv sync --frozen --no-dev
+
+      - name: Run Macro Pulse
+        if: steps.sent-cache.outputs.cache-hit != 'true'
+        env:
+          REPORT_MARKET: ${{ steps.context.outputs.market }}
+          DELIVERY_RECEIPT_PATH: .macro-pulse-external-delivery/sent
+        shell: bash
+        run: |
+          set -o pipefail
+          uv run --frozen python src/main.py --market "$REPORT_MARKET" 2>&1 | tee macro-pulse.log
+
+      - name: Save delivery guard
+        if: always() && steps.sent-cache.outputs.cache-hit != 'true' && hashFiles('.macro-pulse-external-delivery/sent') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .macro-pulse-external-delivery
+          key: ${{ steps.context.outputs.cache_key }}
+
+      - name: Upload run log
+        if: always() && steps.sent-cache.outputs.cache-hit != 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: external-marketbrief-${{ github.run_id }}
+          path: |
+            macro-pulse.log
+            macro_pulse_report.html
+          if-no-files-found: ignore
