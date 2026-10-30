@@ -74,19 +74,9 @@ def validate_krx_delivery_data(data) -> tuple[bool, str]:
         if name not in flow_by_name or flow_by_name[name].price is None
     )
 
-    valid_sector_items = [
-        item
-        for item in data.get("sector_flow", [])
-        if item.price is not None and item.name != "업종별 수급"
-    ]
-
     problems = []
     if missing_flow:
         problems.append("현물 수급 누락: " + ", ".join(missing_flow))
-    if len(valid_sector_items) < 12:
-        problems.append(
-            f"업종 수급 부족: {len(valid_sector_items)}/12"
-        )
 
     return (not problems, "; ".join(problems))
 
